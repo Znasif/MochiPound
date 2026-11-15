@@ -36,6 +36,8 @@ const lerp = THREE.MathUtils.lerp;
 const ease = (x) => x * x * (3 - 2 * x);
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 
+export const HAND_HIT_COOLDOWN_S = 5; // s between two hand-hit penalties (the mallet on a hand)
+
 export function createStation(scene) {
   let hands = null; // tracked hands (src/hands.js), set by setHands
   const listeners = {};
@@ -84,10 +86,11 @@ export function createStation(scene) {
   // (its mortar is the exact one drawn above, read back from the meshes, as the mallet's collision is)
   const dough = createDough(scene, { usu: usuShape(usu), map: riceMat.map });
   // Conditioning sweeps exactly one material parameter, Young's modulus (the user's call, 2026-11-15).
-  // Moisture is a gameplay meter: it only decides whether elasticity is gained or lost. The dough's
-  // wetness (tack and hand friction) stays the bucket dip's, as before: a dip wets it, strikes work it in.
+  // Moisture is only the dough's colour (whiter with more water, browner with less). The dough's wetness
+  // (tack and hand friction) stays the bucket dip's, as before: a dip wets it, strikes work it in.
   function applyMaterialState() {
     dough.setYoungsModulus(conditioning.youngsModulus);
+    dough.setMoisture?.(conditioning.snapshot().moisture);
   }
   applyMaterialState();
   const DOUGH_RADIUS = 0.14; // ~11 L of steamed rice
@@ -287,19 +290,20 @@ export function createStation(scene) {
   };
   const tmp = new THREE.Vector3();
   const riceFrom = new THREE.Vector3(L.USU.position[0], RICE_FROM_Y, L.USU.position[2]);
+  // one hand hit, one penalty: a mallet resting on (or bouncing off) a hand keeps touching it, and the host
+  // and guest can both detect the same hit, so another counts only 5 s after the last (the user's call)
   let lastHandHit = -Infinity, handHitSequence = 0;
   const receivedHits = new Set();
 
-  function recordSuccessfulAction(event) {
-    if (follower || storyBlocked || st.phase !== 'pound' || !conditioning.reward(event)) return false;
+  // a rhythm judgment, this headset's or the guest's (src/dough/conditioning.js: each turn's strike and knead
+  // together add their average points to the elasticity). Only rhythm counts: free play changes nothing.
+  function recordJudgment(event) {
+    if (follower || storyBlocked || st.phase !== 'pound' || !conditioning.judge(event)) return false;
     applyMaterialState(); emit('conditioning', conditioning.snapshot());
     return true;
   }
-  function freePlaySuccess(action) {
-    recordSuccessfulAction({ action, epoch: conditioning.snapshot().epoch, id: `physical:${Math.floor(st.clock * 10)}`, kind: 'good' });
-  }
   function reportHandHit() {
-    if (follower || storyBlocked || st.phase !== 'pound' || st.mode === 'idle' || st.clock - lastHandHit < 0.65) return;
+    if (follower || storyBlocked || st.phase !== 'pound' || st.mode === 'idle' || st.clock - lastHandHit < HAND_HIT_COOLDOWN_S) return;
     lastHandHit = st.clock;
     emit('hand-hit', { id: `${conditioning.snapshot().epoch}:${++handHitSequence}`, epoch: conditioning.snapshot().epoch });
   }
@@ -313,7 +317,6 @@ export function createStation(scene) {
     // fire first, then move the signal the strike changes (the event reads the signal as it fires)
     emit('pound', { by, strength, rushed, interval, progress: st.progress });
     dough.setWetness(dough.wetness * 0.6); // the water from the last dip is worked in
-    if (!st.rhythm && !rushed) freePlaySuccess('strike');
     st.strikes += rushed ? 0.5 : 1;
     st.progress = clamp01(st.strikes / L.POUNDING.strikesPerBatch);
     shapeDough(st.progress);
@@ -342,7 +345,6 @@ export function createStation(scene) {
         sl.inside = true;
         if (h.palmSpeed >= 0.3 && st.phase === 'pound' && !storyBlocked) {
           emit('turn', { hand: h.i, speed: h.palmSpeed });
-          if (!st.rhythm) freePlaySuccess('knead');
         }
       } else if (sl.inside && d < 0.25) sl.inside = false;
     }
@@ -605,12 +607,14 @@ export function createStation(scene) {
     // multiplayer (src/sync.js). Guest: start each batch phase when the host does (the host emits 'phase').
     setFollower(v) { follower = v; },
     get conditioning() { return conditioning.snapshot(); },
-    recordSuccessfulAction,
+    recordJudgment,
     applyConditioning(state) { if (follower && conditioning.apply(state)) applyMaterialState(); },
     reportHandHit,
     receiveHandHit(event) {
       if (!follower || !event || typeof event.id !== 'string' || event.epoch < conditioning.snapshot().epoch || receivedHits.has(event.id)) return;
       receivedHits.add(event.id);
+      if (st.clock - lastHandHit < HAND_HIT_COOLDOWN_S) return;
+      lastHandHit = st.clock;
       if (receivedHits.size > 256) receivedHits.delete(receivedHits.values().next().value);
       emit('hand-hit', event);
     },

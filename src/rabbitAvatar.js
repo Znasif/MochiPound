@@ -1,7 +1,8 @@
 // Rigged Moon Rabbit players: separate headset and left/right inputs, two-bone limb IK,
 // planted steps driven by world travel, and a torso that lets the neck turn independently.
 import * as THREE from 'three';
-import { createControllerPaw, removeAuthoredRabbitHands } from './pawVisual.js';
+import { removeAuthoredRabbitHands } from './pawVisual.js';
+import { createControllerHand, handleFrame, CONTROLLER_WRIST } from './hands.js';
 
 const STALE = 2.5, MODEL_EYE_Y = 1.16;
 const FACE_CAMERA = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
@@ -64,15 +65,19 @@ function fallbackRabbit(variant) {
   return group;
 }
 
-export function createRabbitAvatar(scene, { variant = 'indigo', hands, load = loadRabbit } = {}) {
+// slotBase: the first of this person's two remote hand slots in `hands` (2; 4 for the film camera's second player).
+// kine: () => the station's mallet, so a controller hand of this person's that holds it wraps its handle
+export function createRabbitAvatar(scene, { variant = 'indigo', hands, slotBase = 2, kine = null, load = loadRabbit } = {}) {
   const root = new THREE.Group(); root.name = 'other-player'; root.visible = false; scene.add(root);
   const visual = new THREE.Group(); visual.rotation.y = Math.PI; root.add(visual);
   const fallback = fallbackRabbit(variant); visual.add(fallback);
   let model = null, bones = [], bind = [], head = null, hips = null, scale = null, seen = -Infinity, lastYaw = 0;
   let bodyYaw = null, gaitPhase = 0, walkBlend = 0, resetFeet = true;
   const arms = [], legs = [];
-  const controllerPaws = ['left', 'right'].map((side) => ({ side, mesh: createControllerPaw(side) }));
-  for (const paw of controllerPaws) scene.add(paw.mesh);
+  // the other person's controllers: the same hand as their tracked hands (src/hands.js), at each grip
+  const controllerPaws = ['left', 'right'].map((side) => ({ side, hand: createControllerHand(), held: { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), radius: 0 } }));
+  const gripM = new THREE.Matrix4(), ONE = new THREE.Vector3(1, 1, 1);
+  for (const paw of controllerPaws) scene.add(paw.hand.object3d);
   const position = new THREE.Vector3(), targetP = new THREE.Vector3(), targetQ = new THREE.Quaternion(), orientation = new THREE.Quaternion();
   const forward = new THREE.Vector3(), eyeOffset = new THREE.Vector3(), target = new THREE.Vector3(), pole = new THREE.Vector3();
   const foot = new THREE.Vector3(), kinePosition = new THREE.Vector3();
@@ -125,10 +130,20 @@ export function createRabbitAvatar(scene, { variant = 'indigo', hands, load = lo
     },
     update(now, dt) {
       root.visible = now - seen < STALE;
-      for (const { side, mesh } of controllerPaws) {
-        const input = effectors[side];
+      for (const { side, hand, held } of controllerPaws) {
+        const input = effectors[side], mesh = hand.object3d;
         mesh.visible = root.visible && input?.kind === 'controller' && input.pose?.length === 7 && input.pose.every(Number.isFinite);
-        if (mesh.visible) { mesh.position.fromArray(input.pose); mesh.quaternion.fromArray(input.pose, 3); }
+        if (mesh.visible) {
+          mesh.position.fromArray(input.pose); mesh.quaternion.fromArray(input.pose, 3).normalize();
+          // holding the mallet (it's posed from this person's pose here): the hand within 15 cm of its handle wraps it
+          let frame = null;
+          const tool = heldKine ? kine?.() : null;
+          if (tool) {
+            frame = handleFrame(tool, gripM.compose(mesh.position, mesh.quaternion, ONE).invert(), held);
+            if (frame && frame.position.length() > 0.15) frame = null;
+          }
+          hand.update(dt, Array.isArray(input.curl) ? input.curl : [0, 0, 1], side, frame);
+        }
       }
       if (!root.visible) return;
       const blend = 1 - Math.exp(-dt * 20);
@@ -187,13 +202,14 @@ export function createRabbitAvatar(scene, { variant = 'indigo', hands, load = lo
       head.parent.worldToLocal(target); head.position.copy(target);
       head.parent.getWorldQuaternion(parentQ).invert(); head.quaternion.copy(parentQ).multiply(q);
       head.updateWorldMatrix(false, true);
-      const remoteHands = hands?.hands?.filter((h) => h.remote && h.tracked) ?? [];
+      const mine = (h) => !Number.isInteger(h.i) || (h.i >= slotBase && h.i < slotBase + 2); // this person's slots
+      const remoteHands = hands?.hands?.filter((h) => h.remote && h.tracked && mine(h)) ?? [];
       for (const arm of arms) {
         if (!arm.upper || !arm.lower || !arm.end) continue;
         const side = arm.side === 'L' ? 'left' : 'right', input = effectors[side];
         const validInput = input?.pose?.length === 7 && input.pose.every(Number.isFinite);
         const hand = remoteHands.find((h) => {
-          if (validInput && input.kind === 'hand' && Number.isInteger(input.slot)) return h.i === input.slot + 2;
+          if (validInput && input.kind === 'hand' && Number.isInteger(input.slot)) return h.i === input.slot + slotBase;
           if (h.handedness) return h.handedness === (arm.side === 'L' ? 'left' : 'right');
           const wrist = h.joints.get('wrist');
           if (!wrist) return false;
@@ -201,7 +217,11 @@ export function createRabbitAvatar(scene, { variant = 'indigo', hands, load = lo
           return (target.x >= 0) === (arm.side === 'L');
         });
         const wrist = hand?.joints.get('wrist');
-        if (validInput) target.fromArray(input.pose);
+        if (validInput) {
+          target.fromArray(input.pose);
+          // a controller's pose is its grip (the middle of the fist): the forearm ends at the drawn hand's wrist
+          if (input.kind === 'controller') target.add(bend.set(CONTROLLER_WRIST[0] * (side === 'left' ? -1 : 1), CONTROLLER_WRIST[1], CONTROLLER_WRIST[2]).applyQuaternion(rotation.fromArray(input.pose, 3).normalize()));
+        }
         else if (wrist) target.copy(wrist.center);
         else if (heldKine) {
           // Controller poses are already represented by the shared mallet's grip origin.

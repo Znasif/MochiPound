@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { toB64, fromB64 } from './net.js';
 import { createRabbitAvatar } from './rabbitAvatar.js';
+import { controllerCurl } from './hands.js';
 
 // Two headsets in one scene, sharing as little as possible (2026-11-15, the user's choice): each headset
 // runs everything itself (the batch, its own dough, the sounds,
@@ -23,6 +24,8 @@ import { createRabbitAvatar } from './rabbitAvatar.js';
 //                          (dough.applySnapshot), so both see the same lump. Both build the dough the same way
 //                          (the guest takes the host's tier), so particle i is the same bit of dough on both
 // src/musicSync.js shares the host's music clock and song; the guest cues kneads between host strikes.
+// A third page, the film camera (?mp=watch, createWatchSync), only listens: it follows the host like the
+// guest and draws both players. Its 'hello' tells the host to send the dough and judgments ('judge').
 
 const POSE_DT = 1 / 45, DOUGH_DT = 1 / 12;
 const DOUGH_EASE = 0.35; // share of the way to the host's particles per update (~0.25 s to agree)
@@ -39,7 +42,8 @@ export function avatarInputs(controllers = [], hands) {
   const effectors = {};
   for (const c of controllers) {
     if (!c.source || c.source.hand || !['left', 'right'].includes(c.handedness) || c.grip.visible === false) continue;
-    effectors[c.handedness] = { pose: headPose(c.grip), kind: 'controller' };
+    // curl: [trigger, squeeze, thumb], so the other headset poses this controller hand's fingers too
+    effectors[c.handedness] = { pose: headPose(c.grip), kind: 'controller', curl: controllerCurl(c.source.gamepad) };
   }
   for (const h of hands?.hands ?? []) {
     if (h.remote || !h.tracked || !['left', 'right'].includes(h.handedness)) continue;
@@ -51,7 +55,7 @@ export function avatarInputs(controllers = [], hands) {
 
 // both roles: send this headset's pose (and the kine while this headset holds it), take in the other's
 function createPoseLink({ net, hands, camera, scene, station, controllers, onPose }) {
-  const avatar = createRabbitAvatar(scene, { variant: net.role === 'host' ? 'indigo' : 'red', hands });
+  const avatar = createRabbitAvatar(scene, { variant: net.role === 'host' ? 'indigo' : 'red', hands, kine: () => station.kine });
   let clock = 0, acc = 0;
   net.on('pose', (d, peer) => {
     if (peer.role !== (net.role === 'host' ? 'join' : 'host')) return;
@@ -90,10 +94,10 @@ export function createHostSync({ net, station, hands, camera, scene, controllers
   const sendConditioning = () => { if (station.conditioning) net.send('conditioning', station.conditioning); };
   station.on('conditioning', sendConditioning);
   station.on('hand-hit', (event) => net.send('hand-hit', event));
-  net.on('condition-success', (event, peer) => {
+  net.on('rhythm-judgment', (event, peer) => {
     if (peer.role !== 'join') return;
     if (event.action === 'strike' && peer.from !== kineHolder) return;
-    station.recordSuccessfulAction?.(event);
+    station.recordJudgment?.(event);
   });
   net.on('hand-hit-report', (event, peer) => {
     if (peer.role !== 'join' || typeof event.id !== 'string' || event.id.length > 80 || event.epoch !== station.conditioning?.epoch) return;
@@ -128,7 +132,7 @@ export function createHostSync({ net, station, hands, camera, scene, controllers
       if (phaseAcc >= 1) { phaseAcc = 0; net.send('phase', { phase: station.phase }); sendAsset(); }
       // the dough, while someone has joined
       doughAcc += dt;
-      if (doughAcc >= DOUGH_DT && net.has('join')) { doughAcc = 0; station.dough.requestSnapshot(sendDough); }
+      if (doughAcc >= DOUGH_DT && (net.has('join') || net.has('watch'))) { doughAcc = 0; station.dough.requestSnapshot(sendDough); }
     },
   };
 }
@@ -174,8 +178,50 @@ export function createGuestSync({ net, station, hands, camera, scene, controller
     },
     // the guest's kine: ask the host; onKine(ok) when it answers (false also when it takes the kine back)
     takeKine() { net.send('kine-take', {}); },
-    reportSuccessfulAction(event) { net.send('condition-success', event); },
+    reportJudgment(event) { net.send('rhythm-judgment', event); }, // the guest's turns count on the host
     dropKine() { net.send('kine-drop', {}); },
     set onKine(fn) { onKine = fn; },
+  };
+}
+
+// The film camera (?mp=watch): renders the host's world from a free camera and never changes it. It follows
+// the host's batch, dough, mallet and meters as the guest does, and draws both players: the host (red) with
+// hand slots 2, 3 and the guest (indigo) with 4, 5 (createHands { remoteSets: 2 }). It sends no poses.
+export function createWatchSync({ net, station, hands, scene }) {
+  station.setFollower(true);
+  const players = {
+    host: { set: 0, avatar: createRabbitAvatar(scene, { variant: 'red', hands, slotBase: 2, kine: () => station.kine }) },
+    join: { set: 1, avatar: createRabbitAvatar(scene, { variant: 'indigo', hands, slotBase: 4, kine: () => station.kine }) },
+  };
+  let clock = 0, kineFrom = null, kineSeen = -Infinity;
+  net.on('pose', (d, peer) => {
+    const p = players[peer.role];
+    if (!p) return;
+    hands.setRemote(handsIn(d.hands), p.set);
+    p.avatar.set(d.head, clock, d.kine, d.effectors);
+    if (peer.role === 'host' && d.assetId) station.setKineAsset(d.assetId);
+    if (!d.kine || (d.assetId && d.assetId !== station.kineAssetId)) return; // a pose from before a mallet change
+    if (station.mode === 'idle') station.setMode('remote');
+    if (station.mode === 'remote') { station.setRemoteKine(d.kine); kineFrom = peer.role; kineSeen = clock; }
+  });
+  const fromHost = (fn) => (d, peer) => { if (peer.role === 'host') fn(d); };
+  net.on('kine-asset', fromHost((d) => station.setKineAsset(d.assetId)));
+  net.on('conditioning', fromHost((state) => station.applyConditioning?.(state)));
+  net.on('hand-hit', fromHost((event) => station.receiveHandHit?.(event)));
+  net.on('phase', fromHost((m) => station.followPhase(m.phase)));
+  net.on('dough', fromHost((m) => station.dough.applySnapshot({ tier: m.tier, N: m.N, x: new Int16Array(fromB64(m.x).buffer), v: new Int16Array(fromB64(m.v).buffer) }, DOUGH_EASE)));
+  return {
+    role: 'watch',
+    get peer() { return net.has('host'); },
+    get guestHere() { return net.has('join'); },
+    get otherHead() { return null; },
+    // the players' heads, for the camera's orbit (null while that person isn't seen)
+    head(role) { return players[role]?.avatar.headPosition ?? null; },
+    update(dt) {
+      clock += dt;
+      for (const p of Object.values(players)) p.avatar.update(clock, dt);
+      if (station.mode === 'remote' && clock - kineSeen > 0.5) { station.setMode('idle'); station.setRemoteKine(null); kineFrom = null; }
+    },
+    get kineHolder() { return kineFrom; },
   };
 }

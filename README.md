@@ -30,11 +30,11 @@ Wait for the kneader's hands to leave the bowl between strikes. 22 strikes turn 
 
 ## Elasticity and moisture
 
-Two bars float above the mortar while you pound:
+Two small, translucent bars sit behind the mortar while you pound:
 
-- **Elasticity.** Fresh rice starts very stiff. Each successful action makes it a little more elastic: a Good or Average strike or knead in rhythm mode, or any clean strike or fold in free play. Only one material value changes, the dough's stiffness (Young's modulus), from 8 kPa down to 1.2 kPa over 40 successes.
-- **Moisture.** It falls slowly, about 1% a second. Dipping a hand in the water bucket adds 40%. Below the yellow mark (30%), successes stop counting and the elasticity drains back toward stiff.
-- **Hitting a hand.** If the mallet hits a hand in the bowl, you lose 500 points and your combo. A red light flashes at the mortar, and the controllers on both headsets vibrate hard. Bare tracked hands have no vibration.
+- **Elasticity.** Fresh rice starts very stiff and softens only through rhythm, for both players. Each player keeps their own score as usual. Every turn, meaning one strike and the knead after it, adds the average of the two players' points to the elasticity: **Perfect** +5%, **Good** +1%, **Bad** (a miss) −3%. Two perfect players make it fully elastic in 20 turns; two bad ones stiffen it again. A turn needs both judgments, so pounding alone, kneading alone, or free play without a song changes nothing. Only one material value changes, the dough's stiffness (Young's modulus), from 8 kPa down to 1.2 kPa.
+- **Moisture.** It only sets the dough's colour: white when watered, browning as it dries. It falls about 1% a second, and each dip of a hand in the water bucket adds 10%.
+- **Hitting a hand.** If the mallet hits a hand in the bowl, you lose 500 points and your combo (at most once every 5 s, however long the mallet stays on the hand). A red light flashes at the mortar, and the controllers on both headsets vibrate hard. Bare tracked hands have no vibration.
 
 VR defaults to **Thumbsticks + physical movement** in Settings, with stick walking, snap turning and automatic role placement. Physical walking, leaning and crouching also work. Choose **Room scale** to start beside the mortar once (host/solo at the pounding side, guest at the kneading side), using the headset's tracked floor and height, then preserve your position when picking up a mallet or switching to hand tracking. Your chosen mode is remembered. Each headset has its own play area; their real rooms are not aligned together.
 
@@ -44,7 +44,7 @@ The Moon garden opens with the Chuseok story on a floating paper scroll, then a 
 
 Either player can choose a floating song scroll with **E** while looking at it within 2.5 m, select with a controller within 0.5 m, or pinch with a tracked hand near the scroll. Scrolls stay visible during play, including while a song is loading or playing, and the playing song glows. Bangarang uses the Tteokme log mallet, Believer the Yokogine, and Gangnam Style the vertical Jeolgut-gongi pestle. Finishing a batch sends the mochi to Earth and restarts the story.
 
-Multiplayer players appear as the original rigged Moon Rabbit characters: red for the host, indigo for the joining player. The rabbits' own paws are removed. Each player's hands are drawn from their tracked joints, 22% fuller to suit the rabbits (the physics uses the real size), and a held controller shows a small paw. Each arm follows its own hand/controller, the head turns separately from the torso, and the legs take alternating steps during physical walking or joystick travel. Leg motion is estimated from movement; no foot trackers are required. Headset appearance and tracking still need a Quest check.
+Multiplayer players appear as the original rigged Moon Rabbit characters: red for the host, indigo for the joining player. The rabbits' own paws are removed. Each player's hands are drawn from their tracked joints, 22% fuller to suit the rabbits (the physics uses the real size). With controllers you see the same hand instead of a controller model: wrapped round the controller, or round the mallet's handle while you hold it, its index finger following the trigger and the other fingers the grip button. Each arm follows its own hand/controller, the head turns separately from the torso, and the legs take alternating steps during physical walking or joystick travel. Leg motion is estimated from movement; no foot trackers are required. Headset appearance and tracking still need a Quest check.
 
 Shared mallets use stable asset IDs (`yokogine`, `tteokme`, `pestle`). The host sends the selected ID with poses, ownership grants and periodic state, so both simulations build the same mesh, grip and collider, including for late joiners and after the tool is put down. Only the granted holder's poses move the shared mallet; a stale pose from a previous mallet type is ignored.
 
@@ -54,7 +54,7 @@ Choose music in the garden using the floating song scrolls; the start menu has n
 
 - strike on every beat, or every other beat for fast songs (chosen automatically), with kneading cues between strikes
 - a ring shrinks onto the mortar's rim and meets it exactly when to strike; the rim pulses on every beat
-- your strikes are judged **Good** (within 60 ms, the ring turns green), **Average** (130 ms, yellow) or a miss (**Early / Late / Off-beat**, red), with score, combo and up to ×4 multiplier; striking while the kneader's hands are in the bowl is a miss
+- your strikes are judged **Perfect** (within 60 ms, the ring turns green), **Good** (130 ms, yellow) or **Bad** (early, late or missed, red), with score, combo and up to ×4 multiplier; striking while the kneader's hands are in the bowl is bad
 - when you are not holding the mallet, strike notes pass unjudged
 - the rice loading and finished batches are rests in the song
 - if hits feel consistently early or late (e.g. Bluetooth headphones), nudge the timing with **[** and **]** (the HUD shows how early or late your hits average)
@@ -64,6 +64,31 @@ Enter on desktop or in VR, then choose a scroll to start or change the music. `n
 With two players (`?mp=host` and `?mp=join` on the same dev server), either player can pick up the mallet (E on desktop, grip in VR) when it is free, and whoever doesn't hold it kneads. A second person kneading is placed at the north rim, opposite the mallet. Either player can choose a scroll. Guest selections go to the host, which loads the song and shares its beat grid and playback clock; simultaneous selections are accepted one at a time. The joining player hears the same playback position, including when joining mid-song. Whoever holds the mallet gets strike rings. The other player's rings cue kneading halfway between those strikes, and their own hand contacts earn rhythm judgments. Song changes, explicit playback pauses and free play are shared. The shared music clock continues if the host headset temporarily loses visibility or suspends its audio; host audio catches up when it returns. Each player must enter once to enable audio on their device.
 
 `node --test scripts/test-music-sync.mjs` checks music synchronization and alternating action cues without headsets.
+
+## Film camera
+
+To record videos, open the scene on a laptop as a third page on the same dev server: pick **Players → Film camera** in the start menu, or open http://localhost:5174/?mp=watch. It shows the host's world live and changes nothing in the game:
+- the batch, the dough and the mallet;
+- both rabbits with their hands;
+- the elasticity and moisture bars;
+- the rings, coloured by each player's judgments, and the hand-hit flash;
+- the music.
+
+Click **Enter**, then click the view to look around.
+
+| Keys | |
+| --- | --- |
+| mouse, arrow keys | look (the arrows pan at a steady rate) |
+| W A S D, E / Q | fly level with the ground; up / down |
+| Shift, mouse wheel | 4× faster; base speed |
+| Z / X | zoom in / out |
+| 1–5 | glide to a preset shot: wide, over the pounder, kneader side, top down, sky (Shift + number cuts straight to it) |
+| O, T | orbit the mortar, then the host, then the guest; T turns slowly around it (turntable) |
+| G | cinematic (heavier) smoothing |
+| R | record the 3D view, without any page UI, to a `.webm` download (video only: for sound, record with OBS or Win+Alt+R) |
+| H, P | hide the help; print the current shot to the console |
+
+A recording has the browser window's size (up to 2× on high-DPI screens). The story intro also plays on the camera; Space skips it.
 
 ## Sound
 

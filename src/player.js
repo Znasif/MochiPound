@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import * as L from './layout.js';
 
 // The person: a rig (moved for locomotion, never the camera itself), desktop mouse-look + WASD,
@@ -54,11 +53,11 @@ export function createPlayer({ scene, camera, renderer, dom, getColliders }) {
   });
 
   // ---------- WebXR controllers ----------
-  const factory = new XRControllerModelFactory();
+  // No controller model: each controller shows a hand instead, drawn like the tracked hands (src/hands.js
+  // createControllerHand, the user's call 2026-11-15)
   const controllers = [0, 1].map((i) => {
     const ray = renderer.xr.getController(i); // ask three for both, even if one is used
     const grip = renderer.xr.getControllerGrip(i);
-    grip.add(factory.createControllerModel(grip));
     rig.add(ray, grip);
     const c = { ray, grip, source: null, handedness: null };
     ray.addEventListener('connected', (e) => { c.source = e.data; c.handedness = e.data.handedness; });

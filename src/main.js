@@ -2,13 +2,14 @@ import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import * as L from './layout.js';
 import { worldFromUrl, worldById, DEFAULT_WORLD } from './worlds.js';
-import { createStation } from './station.js';
+import { createStation, HAND_HIT_COOLDOWN_S } from './station.js';
 import { createSteam } from './effects.js';
 import { createPlayer } from './player.js';
 import { createHands } from './hands.js';
 import { TIERS, particlesFor } from './dough/mpm-core.js';
 import { createNet, roleFromUrl } from './net.js';
-import { createHostSync, createGuestSync } from './sync.js';
+import { createHostSync, createGuestSync, createWatchSync } from './sync.js';
+import { createSpectatorCam } from './spectatorCam.js';
 import { loadAudio } from './audio.js';
 import { createAudioPlayback } from './audioPlayback.js';
 import { createMusic } from './rhythm/music.js';
@@ -83,16 +84,21 @@ const player = createPlayer({
 });
 if (world.spawn) player.teleport(world.spawn.position[0], world.spawn.position[2], world.spawn.yaw); // player.js starts at L.SPAWN
 // tracked hands (src/hands.js): the kneading person's own hands, drawn and colliding with dough and kine
-const hands = createHands(renderer, player.rig, scene, player.controllers);
+// (the film camera, ?mp=watch, draws both players' hands: two remote sets)
+const hands = createHands(renderer, player.rig, scene, player.controllers, { remoteSets: roleFromUrl() === 'watch' ? 2 : 1 });
 station.setHands(hands);
 
 // two headsets (src/net.js, src/sync.js): 'host' runs everything and sends it out, 'join' draws the host's
-// scene and kneads its dough with tracked hands; 'solo' is one headset alone
+// scene and kneads its dough with tracked hands; 'solo' is one headset alone. 'watch' is the film camera:
+// a laptop page that follows the host's world, draws both players and flies freely (src/spectatorCam.js)
 const mpRole = roleFromUrl();
 const net = createNet(mpRole);
 const sync = mpRole === 'host' ? createHostSync({ net, station, hands, camera, scene, controllers: player.controllers })
-  : mpRole === 'join' ? createGuestSync({ net, station, hands, camera, scene, controllers: player.controllers }) : null;
-const guest = mpRole === 'join';
+  : mpRole === 'join' ? createGuestSync({ net, station, hands, camera, scene, controllers: player.controllers })
+    : mpRole === 'watch' ? createWatchSync({ net, station, hands, scene }) : null;
+const guest = mpRole === 'join', watch = mpRole === 'watch';
+const film = watch ? createSpectatorCam({ camera, dom: renderer.domElement, scene,
+  targets: { host: () => sync.head('host'), join: () => sync.head('join') } }) : null;
 
 // ---------- UI ----------
 const $ = (id) => document.getElementById(id);
@@ -123,7 +129,7 @@ const ui = {
   ui.quality.value = TIERS.some((t) => t.name === forced) ? forced : '';
   // multiplayer role: the same reload with ?mp=<role>
   ui.mp.value = new URLSearchParams(location.search).get('mp') ?? 'solo';
-  if (!['solo', 'host', 'join'].includes(ui.mp.value)) ui.mp.value = 'solo';
+  if (!['solo', 'host', 'join', 'watch'].includes(ui.mp.value)) ui.mp.value = 'solo';
   ui.mp.addEventListener('change', () => {
     const url = new URL(location.href);
     if (ui.mp.value !== 'solo') url.searchParams.set('mp', ui.mp.value); else url.searchParams.delete('mp');
@@ -222,16 +228,17 @@ audioReady.then((a) => {
 function enter() {
   void soundPlayback.start(); // unlock both contexts synchronously inside the user gesture
   ui.overlay.classList.add('hidden');
-  ui.hud.classList.remove('hidden');
-  ui.reticle.classList.remove('hidden');
+  if (!watch) { ui.hud.classList.remove('hidden'); ui.reticle.classList.remove('hidden'); }
   credit?.hide();
   player.enable();
+  film?.enable();
   story?.enter?.(false);
   startMusic();
   if (!renderer.xr.isPresenting) renderer.domElement.requestPointerLock?.()?.catch?.(() => {}); // a promise in current Chrome (rejects outside a user gesture)
 }
 ui.start.addEventListener('click', enter);
 document.addEventListener('pointerlockchange', () => {
+  if (watch) return; // the film camera keeps filming; click to look again
   if (document.pointerLockElement !== renderer.domElement && player.enabled && !renderer.xr.isPresenting) {
     ui.overlay.classList.remove('hidden');
     ui.start.textContent = 'Resume';
@@ -244,6 +251,7 @@ document.addEventListener('pointerlockchange', () => {
 // hand tracking: the person kneading uses their own hands (controllers put down)
 const vrButton = VRButton.createButton(renderer, { optionalFeatures: ['hand-tracking'] });
 ui.vrSlot.appendChild(vrButton);
+if (watch) ui.vrSlot.classList.add('hidden'); // the film camera is a desktop page
 vrButton.addEventListener('click', () => {
   void soundPlayback.start();
   startMusic();
@@ -288,7 +296,7 @@ document.addEventListener('visibilitychange', () => {
 
 // ---------- rhythm mode ----------
 const music = createMusic({ keepAlive: mpRole === 'host' });
-const rhythm = createRhythm({ scene, station, music, kneading: guest });
+const rhythm = createRhythm({ scene, station, music, kneading: guest, watch });
 // Either player chooses an in-world song scroll. The host loads and starts the shared song;
 // solo pauses in the menu, while a host keeps the shared clock going.
 let songChosen = false, entered = false;
@@ -302,20 +310,27 @@ const musicSync = mpRole === 'host' ? createMusicLead({
     return selectListedSong(name, assetId);
   },
 })
-  : guest ? createMusicFollow({
+  : guest || watch ? createMusicFollow({
     net, music, rhythm,
     canPlay: () => entered && ui.overlay.classList.contains('hidden')
       && (!world.attach || (story?.started && !story.blocked))
       && (!renderer.xr.isPresenting || renderer.xr.getSession()?.visibilityState !== 'hidden'),
     onStatus(text) { hostMusicStatus = text; },
-    onActive(active) { ui.rhud.classList.toggle('hidden', !active); },
+    onActive(active) { ui.rhud.classList.toggle('hidden', !active || watch); },
     onPickResult(ok) { if (!ok) toast('Song selection was not accepted. Try again when the host is ready.', 2.5); },
   }) : null;
-rhythm.on('judge', ({ kind, action, noteKey }) => {
-  if (!['perfect', 'good'].includes(kind) || !noteKey) return;
+// a film camera connected (?mp=watch): it colours its rings and shows the popups from these judgments
+rhythm.on('judge', ({ kind, label, action, noteKey }) => {
+  if (sync && !watch && net.has('watch')) net.send('judge', { kind, label, action: action ?? null, noteKey: noteKey ?? null });
+});
+if (watch) net.on('judge', (j, peer) => { if (peer.role === 'host' || peer.role === 'join') rhythm.showJudgment(j); });
+// every judged note, good or bad, goes to the host's elasticity, keyed by its turn (the strike's song time), so
+// the striker's and the kneader's judgments of one turn meet there (src/dough/conditioning.js)
+rhythm.on('judge', ({ kind, action, noteKey, turn }) => {
+  if (watch || !['perfect', 'good', 'miss'].includes(kind) || !noteKey || !Number.isFinite(turn)) return;
   const songId = guest ? musicSync.songId : selectedSong?.id;
-  const event = { kind, action, id: `${songId}:${noteKey}`, epoch: station.conditioning.epoch };
-  if (guest) sync.reportSuccessfulAction(event); else station.recordSuccessfulAction(event);
+  const event = { kind, action, id: `${songId}:${turn}`, epoch: station.conditioning.epoch };
+  if (guest) sync.reportJudgment(event); else station.recordJudgment(event);
 });
 function stopMusic() {
   if (rhythm.active) rhythm.stop();
@@ -327,7 +342,7 @@ function startMusic() {
   entered = true;
   if (!music.playing || !story?.blocked) music.unlock();
   if (world.attach && (!story?.started || story.blocked)) return;
-  if (guest) { musicSync.update(); return; }
+  if (guest || watch) { musicSync.update(); return; }
   if (!songChosen || !music.analysis) return; // still finding the beat: starts when it's done
   if (rhythm.active) { music.resume(); return; }
   music.start();
@@ -382,14 +397,14 @@ if (world.attach) {
     scene, renderer, camera, player, station, hands, music, rhythm, toast,
     resumeMusic: startMusic,
     canChooseSong: true,
-    musicAuthority: !guest,
-    get songLoading() { return guest ? musicSync.songLoading : songLoading; },
+    musicAuthority: !guest && !watch,
+    get songLoading() { return guest || watch ? musicSync.songLoading : songLoading; },
     clearSong() {
-      if (guest) return;
+      if (guest || watch) return;
       loadId++; songLoading = false; songChosen = false; selectedSong = null; stopMusic();
     },
     equipMallet(controller) {
-      if (guest || station.mode === 'remote') return;
+      if (guest || watch || station.mode === 'remote') return;
       if (controller) {
         station.setMode('vr'); station.attachToGrip(controller.grip); kineHand = controller;
         if (!player.roomScale) player.placeHeadAt(L.POUNDER_SPOT[0], L.POUNDER_SPOT[2] + 0.12);
@@ -398,6 +413,7 @@ if (world.attach) {
     },
     // A guest's scroll asks the host; both follow the host's resulting song and clock.
     selectSong(name, assetId) {
+      if (watch) return false; // the film camera only watches
       if (guest) return musicSync.pickSong(name, assetId);
       return selectListedSong(name, assetId);
     },
@@ -430,6 +446,7 @@ function takeDesktopKine() {
   player.lockAt([L.POUNDER_SPOT[0], 0, L.POUNDER_SPOT[2] + 0.02], 0, -0.62);
 }
 player.on('use', () => {
+  if (watch) return; // the film camera's keys are its own (src/spectatorCam.js)
   if (story?.use?.(null)) return; // the story took the press (e.g. a song scroll you're looking at)
   if (renderer.xr.isPresenting) return;
   if (station.mode === 'remote') { toast('The other headset is holding the kine.', 1.6); return; }
@@ -443,7 +460,7 @@ player.on('use', () => {
     else if (!wantKine) { wantKine = { desktop: true }; wantSince = elapsed; sync.takeKine(); }
   }
 });
-player.on('strike', () => { if (station.mode === 'desktop') station.desktopSwing(); });
+player.on('strike', () => { if (!watch && station.mode === 'desktop') station.desktopSwing(); });
 let kineHand = null;
 // the guest's kine (multiplayer): asked of the host, which hands it over if nobody holds it; then it is
 // held here exactly as on the host (VR mode: strikes are felt and counted on this headset at once)
@@ -479,6 +496,7 @@ if (guest) {
   };
 }
 player.on('xrselect', (c) => {
+  if (watch) return;
   if (story?.use?.(c)) return; // the story took the press (e.g. a song scroll within reach of this controller)
   if (guest) {
     if (guestHolds) { guestDropKine(); sync.dropKine(); }
@@ -515,7 +533,11 @@ station.on('pound', ({ by, rushed }) => {
 station.on('kine_contact', ({ kind, speed }) => {
   if (kind !== 'hand' && kineHand) player.haptic(kineHand, Math.min(1, 0.35 + 0.15 * speed), 50);
 });
+let lastPenaltyAt = -Infinity; // and on this page too: one penalty per HAND_HIT_COOLDOWN_S, whatever the path
 station.on('hand-hit', () => {
+  const now = performance.now() / 1000;
+  if (now - lastPenaltyAt < HAND_HIT_COOLDOWN_S) return;
+  lastPenaltyAt = now;
   rhythm.penalizeHandHit(); player.warnHandHit();
   toast('Hands hit! −500 · combo lost', 2.5);
 });
@@ -542,7 +564,7 @@ let elapsed = 0;
 let promptText = '';
 let qualityShown = null;
 let mpShown = null;
-if (guest) {
+if (guest || watch) {
   ui.quality.disabled = true;
 }
 let handsGoneFor = Infinity; // s since hands were last tracked (VR)
@@ -556,7 +578,7 @@ renderer.setAnimationLoop((time) => {
 
   shownProgress += (station.progress - shownProgress) * (1 - Math.exp(-dt * 1.2));
   world.setProgress?.(shownProgress);
-  world.update(dt, elapsed, player.head);
+  world.update(dt, elapsed, film ? film.head : player.head);
   story?.update?.(dt, elapsed);
   hands.update(dt);
   // whenever hands appear (after at least a second without them: a switch from controllers, not a tracking
@@ -591,7 +613,7 @@ renderer.setAnimationLoop((time) => {
 
   doughSteam.intensity = Math.max(0, doughSteam.intensity - dt * 0.03);
 
-  player.update(dt);
+  if (film) film.update(dt); else player.update(dt);
   steam.update(dt);
 
   audio?.update(camera);
@@ -601,7 +623,9 @@ renderer.setAnimationLoop((time) => {
   });
 
   // HUD
-  if (!xr) {
+  if (!xr && watch) {
+    if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) ui.toast.classList.remove('on'); }
+  } else if (!xr) {
     ui.progress.style.width = `${Math.round(station.progress * 100)}%`;
     ui.batch.textContent = `batch ${batches + 1}`;
     let text = '';
@@ -633,14 +657,15 @@ renderer.setAnimationLoop((time) => {
   // who is connected, next to the multiplayer menu
   {
     const t = !sync ? '' : !net.available ? 'needs the dev server (npm run dev)'
-      : sync.role === 'host' ? (sync.peer ? 'the other headset has joined' : 'waiting for the other headset to join…')
-        : (sync.peer ? `connected to the host · ${hostMusicStatus}` : 'waiting for the host…');
+      : sync.role === 'host' ? (sync.peer ? 'the other headset has joined' : 'waiting for the other headset to join…') + (net.has('watch') ? ' · film camera connected' : '')
+        : sync.role === 'watch' ? (sync.peer ? `filming the host’s world${sync.guestHere ? ' and the guest' : ''}` : 'waiting for the host…')
+          : (sync.peer ? `connected to the host · ${hostMusicStatus}` : 'waiting for the host…');
     if (t !== mpShown) { mpShown = t; ui.mpNote.textContent = t; }
   }
   // which dough tier is running, next to the menu
   if (station.dough.stats.tier !== qualityShown) {
     qualityShown = station.dough.stats.tier;
-    ui.qualityNote.textContent = !qualityShown ? '' : guest ? `running ${qualityShown} (the host's dough)` : ui.quality.value
+    ui.qualityNote.textContent = !qualityShown ? '' : guest || watch ? `running ${qualityShown} (the host's dough)` : ui.quality.value
       ? `running ${qualityShown} (chosen; richer tiers can run in slow motion on the Quest)`
       : `running ${qualityShown} (picked for this device)`;
   }

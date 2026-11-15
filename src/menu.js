@@ -55,6 +55,7 @@ const DETAIL = {
     solo: ['Play alone', 'One headset (or a desktop browser).'],
     host: ['Host', 'This headset runs the dough and the music clock; the other headset joins. Either of you can pound or knead.'],
     join: ['Join', 'Join the host in the same room. Pick up the mallet when it’s free, or knead with your own hands.'],
+    watch: ['Film camera', 'On a laptop: see the host’s world with both players and fly a free camera for videos. Changes nothing in the game.'],
   },
   world: Object.fromEntries(WORLDS.map((w) => [w.id, [w.name, w.ready ? w.blurb : `${w.blurb} Coming soon.`]])),
 };
@@ -101,7 +102,7 @@ const setText = (el, t) => { if (el && el.textContent !== t) el.textContent = t;
 function updateValues() {
   setText($('v-worlds'), worldById(worldSel.value)?.name.replace(/ (courtyard|garden)$/i, '') ?? '');
   const mp = $('mp-role');
-  setText($('v-players'), { solo: 'Alone', host: 'Host', join: 'Join' }[mp?.value] ?? '');
+  setText($('v-players'), { solo: 'Alone', host: 'Host', join: 'Join', watch: 'Camera' }[mp?.value] ?? '');
   const q = $('dough-quality');
   setText($('v-settings'), q?.value ? `dough ${q.value}` : 'dough auto');
 }

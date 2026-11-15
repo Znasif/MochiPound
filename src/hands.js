@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { HAND_VISUAL_SCALE, createControllerPaw } from './pawVisual.js';
+import { HAND_VISUAL_SCALE } from './pawVisual.js';
 
 // Tracked hands (WebXR hand input: the Quest's hand tracking, controllers put down). They replace the
 // kneeling turner NPC: a real person kneads the dough. Each hand is drawn from its tracked joints (a
@@ -26,13 +26,156 @@ export const BONES = CHAINS.flatMap((c) => c.slice(1).map((b, k) => [c[k], b]));
 // the WebXR hand joints in a fixed order, for sending them
 export const JOINTS = ['wrist', ...CHAINS.flatMap((c) => c.slice(1))];
 const UP = new THREE.Vector3(0, 1, 0);
+
+// ---------- a hand on a controller (2026-11-15, the user's call: the same hand as when kneading, no controller model) ----------
+// Drawn exactly as a tracked hand (a sphere per joint, a tube per bone, HAND_VISUAL_SCALE fuller, the same
+// ivory). WebXR's grip space is a fist around a rod: -Z along the rod toward the thumb, +Y toward the arm, the
+// back of the right hand toward +X (the left's toward -X). With nothing held, the hand holds the controller:
+// its fingers wrap the rod, the trigger curls the index finger, the grip button the other three, and touching
+// the stick or a face button lowers the thumb onto the top. Holding a mallet, the hand wraps that mallet's own
+// handle instead (handleFrame: the thumb toward its head, the fingers sized to its radius), since the mallet
+// sits a few cm off the controller's axis. Drawing only, never a collider: the hand holding the kine would
+// collide with its own handle, and a free controller hand would count as hands in the bowl.
+const CTRL_RADII = {
+  wrist: 0.021, 'thumb-metacarpal': 0.02, 'thumb-phalanx-proximal': 0.0136, 'thumb-phalanx-distal': 0.0108, 'thumb-tip': 0.0087,
+  metacarpal: 0.021, 'phalanx-proximal': 0.0109, 'phalanx-intermediate': 0.0086, 'phalanx-distal': 0.0076, tip: 0.0067,
+};
+// per finger: its place along the handle (z), and its length and thickness relative to the index finger
+const CTRL_FINGERS = { 'index-finger': [-0.022, 1, 1], 'middle-finger': [-0.003, 1.06, 1.05], 'ring-finger': [0.016, 1, 0.97], 'pinky-finger': [0.033, 0.8, 0.88] };
+const CTRL_SEG = [0.0446, 0.0253, 0.022]; // proximal, intermediate, distal bone lengths (m)
+const KNUCKLE_ANGLE = -15 * Math.PI / 180; // where the knuckles sit on the wrap circle (+X: the back of the hand)
+const CONTROLLER_ROD_R = 0.0195;           // a Quest Touch handle's radius
+const FINGER_SKIN = CTRL_RADII['phalanx-proximal'] * HAND_VISUAL_SCALE + 0.001; // a drawn finger's thickness, plus a hair
+// the wrist joint in grip space for the controller's own handle (right hand; x is mirrored for the left)
+export const CONTROLLER_WRIST = Object.freeze([0.03, 0.08, 0.004]);
+// the thumb on the controller's top: resting on the stick / buttons, or lifted off them
+const CTRL_THUMB = {
+  down: [[0.022, 0.05, -0.022], [0.008, 0.022, -0.042], [-0.014, 0.008, -0.05], [-0.03, -0.002, -0.052]],
+  up: [[0.022, 0.05, -0.022], [0.01, 0.026, -0.045], [-0.006, 0.016, -0.06], [-0.018, 0.01, -0.07]],
+};
+const ctrlBall = new THREE.SphereGeometry(1, 14, 10), ctrlTube = new THREE.CylinderGeometry(1, 1, 1, 12, 1, true);
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
+// the buttons that pose a controller hand, from a gamepad (xr-standard: 0 trigger, 1 squeeze, 3 stick, 4-5 face)
+export function controllerCurl(gamepad) {
+  const b = gamepad?.buttons ?? [];
+  const r2 = (v) => Math.round((v ?? 0) * 100) / 100;
+  return [r2(b[0]?.value), r2(b[1]?.value), [3, 4, 5].some((i) => b[i]?.touched || b[i]?.pressed) ? 1 : 0];
+}
+
+// Where a held tool's handle runs, seen from a frame with inverse world matrix `inv` (a controller's grip):
+// { position, quaternion, radius } for a hand wrapped around it with the thumb toward the tool's head, or null
+// when the tool has no handle mesh ('kine-handle', or 'grip-wrap' where a mallet has one: that's held).
+const hm = new THREE.Matrix4(), hp = new THREE.Vector3(), ha = new THREE.Vector3(), hh = new THREE.Vector3(), hs = new THREE.Vector3(), hq = new THREE.Quaternion();
+export function handleFrame(tool, inv, out = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), radius: 0 }) {
+  if (!tool) return null;
+  let handle = null, wrap = null, head = null;
+  tool.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.name === 'grip-wrap') wrap ??= o; else if (o.name === 'kine-handle') handle ??= o; else if (o.name === 'kine-head') head ??= o;
+  });
+  const grip = wrap ?? handle, g = grip?.geometry?.parameters;
+  if (!g || !(g.height > 0)) return null;
+  tool.updateWorldMatrix(true, true);
+  hm.multiplyMatrices(inv, grip.matrixWorld).decompose(hp, hq, hs);
+  ha.set(0, 1, 0).applyQuaternion(hq); // a cylinder's axis
+  if (head) { hh.setFromMatrixPosition(hm.multiplyMatrices(inv, head.matrixWorld)); if (hh.sub(hp).dot(ha) < 0) ha.negate(); }
+  // the hand's centre: the point of the axis nearest the frame's origin, kept on the handle
+  const half = Math.max(0, g.height * hs.y / 2 - 0.05);
+  out.position.copy(hp).addScaledVector(ha, THREE.MathUtils.clamp(-hp.dot(ha), -half, half));
+  out.quaternion.setFromUnitVectors(Z_AXIS, ha.negate()); // the hand's -Z (the thumb) toward the head
+  out.radius = Math.max(g.radiusTop ?? 0, g.radiusBottom ?? 0) * Math.max(hs.x, hs.z);
+  return out;
+}
+
+export function createControllerHand({ material } = {}) {
+  const mat = material ?? new THREE.MeshStandardMaterial({ color: 0xefdec5, roughness: 0.8, metalness: 0 });
+  // group: at the grip (the caller places it); inner: moved onto a held mallet's handle
+  const group = new THREE.Group(); group.name = 'controller-hand'; group.visible = false;
+  const inner = new THREE.Group(); group.add(inner);
+  const balls = new THREE.InstancedMesh(ctrlBall, mat, JOINTS.length), tubes = new THREE.InstancedMesh(ctrlTube, mat, BONES.length);
+  for (const m of [balls, tubes]) { m.frustumCulled = false; m.castShadow = true; inner.add(m); }
+  const joints = new Map(JOINTS.map((name) => [name, { p: new THREE.Vector3(), r: 0 }]));
+  const curl = { index: 0.5, grip: 0.92, thumb: 1, hold: 0 }, d = new THREE.Vector3(), mid = new THREE.Vector3(), qq = new THREE.Quaternion();
+  const m4 = new THREE.Matrix4(), sc = new THREE.Vector3(), q0 = new THREE.Quaternion();
+  let side = 'right', placed = false, rodR = CONTROLLER_ROD_R;
+  function pose() {
+    const mx = side === 'left' ? -1 : 1;
+    const set = (name, x, y, z, r) => { const j = joints.get(name); j.p.set(mx * x, y, z); j.r = r; };
+    // the fingers' wrap circle: their joints lie on it at full curl, just clear of the handle
+    const rho = rodR + FINGER_SKIN, shift = (rho - (CONTROLLER_ROD_R + FINGER_SKIN)) * Math.cos(KNUCKLE_ANGLE);
+    set('wrist', CONTROLLER_WRIST[0] + shift, CONTROLLER_WRIST[1], CONTROLLER_WRIST[2], CTRL_RADII.wrist);
+    for (const [f, [z, len, thick]] of Object.entries(CTRL_FINGERS)) {
+      const c = f === 'index-finger' ? curl.index : curl.grip;
+      set(`${f}-metacarpal`, 0.03 + shift, 0.062, z * 0.45, CTRL_RADII.metacarpal * thick);
+      // full-curl bends for this circle: a chord's central angle, and the turn between successive chords
+      const arc = CTRL_SEG.map((L) => 2 * Math.asin(Math.min(1, L * len / (2 * rho))));
+      const bend = [arc[0] / 2 - KNUCKLE_ANGLE, (arc[0] + arc[1]) / 2, (arc[1] + arc[2]) / 2];
+      let x = rho * Math.cos(KNUCKLE_ANGLE), y = rho * Math.sin(KNUCKLE_ANGLE), phi = 0;
+      set(`${f}-phalanx-proximal`, x, y, z, CTRL_RADII['phalanx-proximal'] * thick);
+      ['phalanx-intermediate', 'phalanx-distal', 'tip'].forEach((joint, k) => {
+        phi += bend[k] * c; // curling from straight down the palm (-Y) toward the palm side
+        x -= Math.sin(phi) * CTRL_SEG[k] * len; y -= Math.cos(phi) * CTRL_SEG[k] * len;
+        set(`${f}-${joint}`, x, y, z, CTRL_RADII[joint] * thick);
+      });
+    }
+    // the thumb: on the controller's top, or (holding a mallet) wrapped the other way round its handle
+    const names = ['thumb-metacarpal', 'thumb-phalanx-proximal', 'thumb-phalanx-distal', 'thumb-tip'];
+    const wrapped = [[0.022 + shift, 0.05, -0.026], [35, -0.031], [100, -0.034], [150, -0.031]];
+    names.forEach((name, k) => {
+      const a = CTRL_THUMB.up[k], b = CTRL_THUMB.down[k], t = curl.thumb;
+      let x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t, z = a[2] + (b[2] - a[2]) * t;
+      if (curl.hold > 0) {
+        const w = wrapped[k], rr = rho + 0.004;
+        const [wx, wy, wz] = k === 0 ? w : [rr * Math.cos(w[0] * Math.PI / 180), rr * Math.sin(w[0] * Math.PI / 180), w[1]];
+        x += (wx - x) * curl.hold; y += (wy - y) * curl.hold; z += (wz - z) * curl.hold;
+      }
+      set(name, x, y, z, CTRL_RADII[name]);
+    });
+  }
+  function draw() {
+    let k = 0;
+    for (const j of joints.values()) balls.setMatrixAt(k++, m4.compose(j.p, q0, sc.setScalar(j.r * HAND_VISUAL_SCALE)));
+    BONES.forEach(([a, b], i) => {
+      const ja = joints.get(a), jb = joints.get(b);
+      d.subVectors(jb.p, ja.p); const len = d.length();
+      mid.addVectors(ja.p, jb.p).multiplyScalar(0.5); qq.setFromUnitVectors(UP, d.multiplyScalar(1 / Math.max(len, 1e-6)));
+      const r = (ja.r + jb.r) / 2 * HAND_VISUAL_SCALE;
+      tubes.setMatrixAt(i, m4.compose(mid, qq, sc.set(r, len, r)));
+    });
+    balls.instanceMatrix.needsUpdate = tubes.instanceMatrix.needsUpdate = true;
+  }
+  return {
+    object3d: group,
+    get joints() { return joints; },
+    // input: a gamepad, or controllerCurl()'s [trigger, squeeze, thumb] (the other player's, over the network).
+    // held: handleFrame() of a mallet this hand holds (the hand moves onto its handle), or null
+    update(dt, input, hand = side, held = null) {
+      const [trigger, squeeze, thumb] = Array.isArray(input) ? input : controllerCurl(input);
+      const k = placed && hand === side ? 1 - Math.exp(-dt * 20) : 1; // fingers ease; a new hand is placed at once
+      side = hand === 'left' ? 'left' : 'right';
+      const hold = held ? 1 : 0;
+      curl.index += ((hold ? 1 : 0.5 + 0.5 * (trigger || 0)) - curl.index) * k;
+      curl.grip += ((hold ? 1 : 0.92 + 0.08 * (squeeze || 0)) - curl.grip) * k;
+      curl.thumb += ((thumb ? 1 : 0) - curl.thumb) * k;
+      curl.hold += (hold - curl.hold) * k;
+      rodR = held ? Math.max(0.01, held.radius) : CONTROLLER_ROD_R;
+      if (held) { inner.position.copy(held.position); inner.quaternion.copy(held.quaternion); }
+      else { inner.position.set(0, 0, 0); inner.quaternion.identity(); }
+      placed = true;
+      pose(); draw();
+    },
+  };
+}
+
 // how hands work the dough: friction 1 = dough pressed against a hand goes with it (no slip); tack 0 =
 // it doesn't stick to the hand; mould 0 = it springs back (elastic)
 export const HAND = { tack: 0, friction: 1, mould: 0 };
 const REMOTE_TIMEOUT = 0.5; // s without news before the other headset's hand counts as gone
 
 // scene: where the drawn hands go (they are posed in world coordinates)
-export function createHands(renderer, rig, scene, controllers = []) {
+// remoteSets: how many other people's hands arrive (1 on a headset; 2 on the film camera, ?mp=watch,
+// which draws both players: set 0 in slots 2, 3 and set 1 in slots 4, 5)
+export function createHands(renderer, rig, scene, controllers = [], { remoteSets = 1 } = {}) {
   const dir = new THREE.Vector3();
   const skin = new THREE.MeshStandardMaterial({ color: 0xefdec5, roughness: 0.8, metalness: 0 });
   const otherSkin = new THREE.MeshStandardMaterial({ color: 0xefdec5, roughness: 0.8, metalness: 0 });
@@ -72,12 +215,14 @@ export function createHands(renderer, rig, scene, controllers = []) {
     });
     return h;
   });
-  const remote = [2, 3].map((i) => slot(i, true));
+  const remote = Array.from({ length: 2 * remoteSets }, (_, k) => slot(2 + k, true));
   const all = [...local, ...remote];
-  const controllerPaws = controllers.map((controller) => {
-    const mesh = createControllerPaw('left'); controller.grip.add(mesh);
-    return { controller, mesh };
+  // each controller shows a hand (createControllerHand), drawn like the tracked hands
+  const controllerHands = controllers.map((controller) => {
+    const hand = createControllerHand({ material: skin }); controller.grip.add(hand.object3d);
+    return { controller, hand, held: { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), radius: 0 } };
   });
+  const inv = new THREE.Matrix4();
 
   // build a slot's colliders and drawing from its joints (h.joints)
   function build(h, dt) {
@@ -163,10 +308,15 @@ export function createHands(renderer, rig, scene, controllers = []) {
         build(h, dt);
       }
       for (const h of all) if (h.tracked) { for (const s of h.spheres) this.spheres.push(s); for (const t of h.tools) this.tools.push(t); }
-      for (const { controller: c, mesh } of controllerPaws) {
-        mesh.visible = renderer.xr.isPresenting && !!c.source && !c.source.hand
+      for (const { controller: c, hand, held } of controllerHands) {
+        const show = renderer.xr.isPresenting && !!c.source && !c.source.hand
           && !local.some((h) => h.tracked && h.handedness === c.handedness);
-        mesh.scale.x = HAND_VISUAL_SCALE * (c.handedness === 'right' ? -1 : 1);
+        hand.object3d.visible = show;
+        if (!show) continue;
+        // the mallet, if the station hung it on this grip: the hand wraps its handle
+        const tool = c.grip.children.find((o) => o !== hand.object3d && o.getObjectByName('kine-head'));
+        c.grip.updateWorldMatrix(true, false);
+        hand.update(dt, c.source.gamepad, c.handedness, tool ? handleFrame(tool, inv.copy(c.grip.matrixWorld).invert(), held) : null);
       }
     },
     // this headset's hands for sending: per hand, the joints as x, y, z, radius in JOINTS order (NaN = not
@@ -180,9 +330,10 @@ export function createHands(renderer, rig, scene, controllers = []) {
       });
     },
     // the other headset's hands, as encode() made them
-    setRemote(arrays) {
+    setRemote(arrays, set = 0) {
       for (let s = 0; s < 2; s++) {
-        const h = remote[s], a = arrays?.[s];
+        const h = remote[2 * set + s], a = arrays?.[s];
+        if (!h) return;
         if (!a) { if (h.tracked) lose(h); h.seen = -Infinity; continue; }
         const back = clock - h.seen > REMOTE_TIMEOUT; // (re)appearing: placed, not glided in
         if (back) h.fresh = true;

@@ -6,9 +6,10 @@
 // Roles (the start screen's menu, kept in the URL as ?mp=host or ?mp=join):
 //   host  runs everything as in solo play (the batch, the dough, the music clock) and decides who holds the kine
 //   join  the guest: follows the host's batch, eases its dough toward the host's, and can knead or ask for the kine
+//   watch the film camera (a laptop): follows the host like the guest, draws both players, changes nothing
 // What is sent is in src/sync.js.
 
-export const ROLES = ['solo', 'host', 'join'];
+export const ROLES = ['solo', 'host', 'join', 'watch'];
 export function roleFromUrl() {
   const r = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('mp') : null;
   return ROLES.includes(r) ? r : 'solo';
@@ -43,7 +44,7 @@ export function createNet(role) {
       if (!m || m.from === id) return;
       const was = net.has(m.role);
       peers.set(m.from, { role: m.role, seen: performance.now() });
-      if (!was) console.info(`[mp] ${m.role === 'host' ? 'host' : m.role === 'join' ? 'guest' : m.role} connected`);
+      if (!was) console.info(`[mp] ${m.role === 'host' ? 'host' : m.role === 'join' ? 'guest' : m.role === 'watch' ? 'film camera' : m.role} connected`);
       for (const fn of listeners[m.type] ?? []) fn(m.data, m);
     });
     setInterval(() => net.send('hello', {}), 1000);

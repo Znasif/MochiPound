@@ -6,6 +6,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createRabbitAvatar } from '../src/rabbitAvatar.js';
 import { avatarInputs } from '../src/sync.js';
+import { CONTROLLER_WRIST } from '../src/hands.js';
+// a controller's pose is its grip, the middle of the drawn hand's fist: the forearm ends at that hand's wrist
+const wristOf = (pose, side) => new THREE.Vector3(CONTROLLER_WRIST[0] * (side === 'left' ? -1 : 1), CONTROLLER_WRIST[1], CONTROLLER_WRIST[2])
+  .applyQuaternion(new THREE.Quaternion().fromArray(pose, 3).normalize()).add(new THREE.Vector3().fromArray(pose));
 
 const canonical = (s) => s.replace(/[_.\s]/g, '').toLowerCase();
 function bone(model, name) {
@@ -50,13 +54,13 @@ for (const variant of ['indigo', 'red']) {
   };
   avatar.set(pose, 0.02, null, inputs); avatar.update(0.02, 1 / 60);
   const leftBefore = point(end);
-  assert.ok(point(rightHand).distanceTo(rightTarget) < 1e-4);
+  assert.ok(point(rightHand).distanceTo(wristOf(inputs.right.pose, 'right')) < 1e-4, 'the right forearm ends at the controller hand\'s wrist');
   inputs.right.pose[1] += 0.08;
   const wristRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.5);
   inputs.right.pose.splice(3, 4, ...wristRotation.toArray());
   for (let i = 0; i < 40; i++) { avatar.set(pose, 0.03 + i / 60, null, inputs); avatar.update(0.03 + i / 60, 1 / 60); }
   assert.ok(point(end).distanceTo(leftBefore) < 1e-5, 'moving the right arm leaves the left arm fixed');
-  assert.ok(Math.abs(point(rightHand).y - inputs.right.pose[1]) < 1e-4, 'right hand independently reaches its new target');
+  assert.ok(point(rightHand).distanceTo(wristOf(inputs.right.pose, 'right')) < 1e-4, 'right hand independently reaches its new target, turned wrist included');
 
   // Looking around does not immediately rotate the torso. The eyes still track the full head pose.
   const torsoYaw = avatar.object3d.rotation.y;

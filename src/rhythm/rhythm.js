@@ -18,7 +18,9 @@ const RIM_R = L.USU.radius * 0.84, RING_START_R = 1.0;
 export const JUDGMENT_COLORS = Object.freeze({ perfect: '#65e287', good: '#ffd45a', miss: '#ff4d4d' });
 export const HAND_HIT_PENALTY = 500;
 
-export function createRhythm({ scene, station, music, kneading = false }) {
+// watch: the film camera (?mp=watch): strike rings only, never judged here; the players' judgments arrive
+// over the network (showJudgment) and colour the matching ring (both build the same note keys)
+export function createRhythm({ scene, station, music, kneading = false, watch = false }) {
   const listeners = {};
   const emit = (n, d) => { for (const fn of listeners[n] ?? []) fn(d); };
   const st = {
@@ -31,7 +33,7 @@ export function createRhythm({ scene, station, music, kneading = false }) {
     role: kneading ? 'knead' : 'strike', strikeTimes: [], kneadTimes: [],
   };
   const holdingHere = () => station.mode === 'desktop' || station.mode === 'vr';
-  const roleNow = () => (holdingHere() ? 'strike' : station.mode === 'remote' ? 'knead' : kneading ? 'knead' : 'strike');
+  const roleNow = () => (watch ? 'strike' : holdingHere() ? 'strike' : station.mode === 'remote' ? 'knead' : kneading ? 'knead' : 'strike');
   // the kine changed hands: this headset's notes become the other action's
   function syncRole() {
     const role = roleNow();
@@ -123,6 +125,17 @@ export function createRhythm({ scene, station, music, kneading = false }) {
     return b === -Infinity ? -Infinity : b + k * st.dur;
   }
 
+  // the turn a note belongs to (one strike and the knead after it): its strike's song time, in ms. Kneads sit
+  // between strikes, so a knead's turn is the strike before it. Every page builds the same strike times.
+  function strikeBefore(t) {
+    const times = st.strikeTimes;
+    if (!times.length || !(st.dur > 0)) return t;
+    const k = Math.floor(t / st.dur), local = t - k * st.dur;
+    let best = -Infinity;
+    for (const x of times) if (x <= local + 1e-6 && x > best) best = x;
+    return best === -Infinity ? Math.max(...times) + (k - 1) * st.dur : best + k * st.dur;
+  }
+  const turnOf = (note) => Math.round(1000 * (st.role === 'knead' ? strikeBefore(note.t) : note.t));
   function judge(note, err, rushed, expired = false) {
     note.judged = true;
     const a = Math.abs(err);
@@ -135,13 +148,14 @@ export function createRhythm({ scene, station, music, kneading = false }) {
     const mult = Math.min(4, 1 + Math.floor(st.combo / 8));
     st.score += (kind === 'perfect' ? 100 : kind === 'good' ? 50 : 0) * mult;
     if (!rushed && a <= WINDOW.catch) { st.recent.push(err); if (st.recent.length > 12) st.recent.shift(); }
-    const label = rushed ? 'Ouch! Hands!' : kind === 'perfect' ? 'Good' : kind === 'good' ? (err < 0 ? 'Average · early' : 'Average · late') : expired ? 'Miss' : err < 0 ? 'Early' : 'Late';
+    // the user's terms (2026-11-15): perfect (green), good (yellow), bad (red)
+    const label = rushed ? 'Bad · hands!' : kind === 'perfect' ? 'Perfect' : kind === 'good' ? (err < 0 ? 'Good · early' : 'Good · late') : expired ? 'Bad · missed' : err < 0 ? 'Bad · early' : 'Bad · late';
     const color = JUDGMENT_COLORS[kind];
     note.result = kind; note.judgedAt = music.time();
     if (note.ring) note.ring.material.color.set(color);
     flash.t = 1; flash.color.set(color);
     popup(label, color);
-    emit('judge', { kind, err, rushed, label, combo: st.combo, score: st.score, noteKey: note.key, action: st.role });
+    emit('judge', { kind, err, rushed, label, combo: st.combo, score: st.score, noteKey: note.key, action: st.role, turn: turnOf(note) });
     return kind;
   }
 
@@ -166,7 +180,7 @@ export function createRhythm({ scene, station, music, kneading = false }) {
     else { // a strike nowhere near a note breaks the combo
       st.combo = 0;
       flash.t = 1; flash.color.set(JUDGMENT_COLORS.miss);
-      popup(rushed ? 'Ouch! Hands!' : 'Off-beat', JUDGMENT_COLORS.miss);
+      popup(rushed ? 'Bad · hands!' : 'Off-beat', JUDGMENT_COLORS.miss);
       emit('judge', { kind: 'offbeat', err: 0, rushed, label: 'Off-beat', combo: 0, score: st.score });
     }
   };
@@ -195,6 +209,18 @@ export function createRhythm({ scene, station, music, kneading = false }) {
     get kneading() { return st.role === 'knead'; },
     get meanErrMs() { return st.recent.length ? (1000 * st.recent.reduce((a, b) => a + b, 0)) / st.recent.length : null; },
     on(n, fn) { (listeners[n] ??= []).push(fn); },
+    // the film camera: a player's judgment ({ kind, label, action, noteKey } from their 'judge')
+    showJudgment({ kind, label, action, noteKey } = {}) {
+      if (!watch || typeof kind !== 'string') return;
+      const result = JUDGMENT_COLORS[kind] ? kind : 'miss', color = JUDGMENT_COLORS[result];
+      const note = action === 'strike' && typeof noteKey === 'string' ? st.notes.get(noteKey) : null;
+      if (note && !note.result) {
+        note.judged = true; note.result = result; note.judgedAt = music.time();
+        if (note.ring) note.ring.material.color.set(color);
+      }
+      flash.t = 1; flash.color.set(color);
+      if (typeof label === 'string' && label) popup(label.slice(0, 24), color);
+    },
     penalizeHandHit() {
       st.score -= HAND_HIT_PENALTY; st.combo = 0; st.counts.miss++;
       hazardTime = 0.9; flash.t = 1; flash.color.set(JUDGMENT_COLORS.miss);
@@ -250,7 +276,8 @@ export function createRhythm({ scene, station, music, kneading = false }) {
       if (!Number.isFinite(now)) return;
       syncRole();
       const pounding = station.phase === 'pound';
-      const playerHasKine = st.role === 'knead' ? station.mode === 'remote' : holdingHere();
+      const playerHasKine = !watch && (st.role === 'knead' ? station.mode === 'remote' : holdingHere());
+      const linger = watch ? 0.6 : 0.35; // the camera waits a little longer for a judgment to arrive
 
       // new notes entering the approach window (only while there is dough to pound)
       if (pounding) {
@@ -264,12 +291,12 @@ export function createRhythm({ scene, station, music, kneading = false }) {
       for (const [key, note] of st.notes) {
         const left = note.t - now;
         if (!pounding && left > 0 && !note.judged) { if (note.ring) note.ring.visible = false; st.notes.delete(key); continue; }
-        if (!note.judged && left < -WINDOW.catch) {
+        if (!note.judged && left < -(watch ? linger : WINDOW.catch)) {
           if (playerHasKine && !note.unheld) judge(note, WINDOW.catch, false, true);
           else note.judged = true;
         }
         const resultAge = note.result ? now - note.judgedAt : null;
-        if (resultAge !== null ? resultAge > 0.65 : left < -0.35) { if (note.ring) note.ring.visible = false; st.notes.delete(key); continue; }
+        if (resultAge !== null ? resultAge > 0.65 : left < -linger) { if (note.ring) note.ring.visible = false; st.notes.delete(key); continue; }
         if (note.ring) {
           const k = Math.max(0, left / LEAD_S);
           note.ring.visible = true;

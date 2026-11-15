@@ -15,13 +15,15 @@ export function createMusicLead({ net, music, rhythm, song, isLoading = () => fa
     const ok = onPick?.(d.name, d.assetId) === true;
     net.send('music-picked', { to: peer.from, request: d.request, name: d.name, ok });
   });
+  // followers: the guest and the film camera (?mp=watch); only the guest may pick songs
+  const follower = (peer) => peer.role === 'join' || peer.role === 'watch';
   net.on('music-ping', (d, peer) => {
-    if (peer.role !== 'join') return;
+    if (!follower(peer)) return;
     net.send('music-pong', { to: peer.from, request: d.request, id: song()?.id, pos: music.position(), state: playback() });
   });
   net.on('music-get', (d, peer) => {
     const s = song();
-    if (peer.role !== 'join' || d.id !== s?.id || !s.bytes) return;
+    if (!follower(peer) || d.id !== s?.id || !s.bytes) return;
     transfers.set(peer.from, { id: s.id, bytes: new Uint8Array(s.bytes), i: 0 });
   });
   const lead = {

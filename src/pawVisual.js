@@ -1,23 +1,6 @@
 import * as THREE from 'three';
 
 export const HAND_VISUAL_SCALE = 1.22;
-// When controllers supply a wrist pose but no finger joints, use a small neutral glove. Actual
-// hand tracking replaces it with the articulated joint mesh; neither changes physical colliders.
-export function createControllerPaw(side) {
-  const group = new THREE.Group(); group.name = `controller-paw-${side}`;
-  const fur = new THREE.MeshStandardMaterial({ color: 0xefdec5, roughness: 0.8 });
-  const sphere = new THREE.SphereGeometry(1, 12, 10);
-  const oval = (x, y, z, sx, sy, sz) => {
-    const mesh = new THREE.Mesh(sphere, fur); mesh.position.set(x, y, z); mesh.scale.set(sx, sy, sz);
-    mesh.castShadow = true; group.add(mesh);
-  };
-  oval(0, -0.012, -0.035, 0.036, 0.022, 0.045);
-  for (let i = 0; i < 4; i++) oval((i - 1.5) * 0.017, -0.025, -0.075, 0.011, 0.022, 0.023);
-  oval(side === 'left' ? 0.036 : -0.036, -0.021, -0.043, 0.016, 0.016, 0.028);
-  group.scale.setScalar(HAND_VISUAL_SCALE); group.visible = false;
-  return group;
-}
-
 // The authored paws share the body's skinned mesh. Keep the armature and wrist transforms for
 // IK, removing only triangles weighted to the hand bones (and any finger descendants).
 export function removeAuthoredRabbitHands(model) {

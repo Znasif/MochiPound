@@ -18,11 +18,16 @@ export function createDough(scene, { usu, map }) {
   // ---- surface material (shared by every tier's mesh) ----
   const material = new THREE.MeshStandardMaterial({ map, color: 0xf3efe6, roughness: 0.85, metalness: 0 });
   const smooth = { value: 0 };
+  // the moisture's colour (2026-11-15, the user's call): white with plenty of water, browner as it dries; applied
+  // after the smoothing, so water shows on rough grains and on smooth dough alike
+  const DRY = new THREE.Color('#b08458'), WATERED = new THREE.Color(1, 1, 1);
+  const tint = { value: WATERED.clone() };
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uSmooth = smooth;
-    shader.fragmentShader = 'uniform float uSmooth;\n' + shader.fragmentShader.replace(
+    shader.uniforms.uTint = tint;
+    shader.fragmentShader = 'uniform float uSmooth;\nuniform vec3 uTint;\n' + shader.fragmentShader.replace(
       '#include <map_fragment>',
-      '#include <map_fragment>\n  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.985, 0.98, 0.965), uSmooth);',
+      '#include <map_fragment>\n  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.985, 0.98, 0.965), uSmooth) * uTint;',
     );
   };
 
@@ -173,6 +178,8 @@ export function createDough(scene, { usu, map }) {
     get wetness() { return wet; },
     setWetness(w) { wet = Math.min(1, Math.max(0, w)); },
     setYoungsModulus(E) { if (Number.isFinite(E) && E > 0) youngsModulus = E; },
+    // 0 (dry: brown) .. 1 (watered: white); colour only
+    setMoisture(m) { if (Number.isFinite(m)) tint.value.copy(DRY).lerp(WATERED, Math.min(1, Math.max(0, m))); },
     // tools: [{ id, kind: 'sphere' | 'cylinder', center: Vector3, quat: Quaternion, r, h, tack (0 slides off, 1 sticks), mould (1: a hand, see mpm-core mouldYield) }]
     update(dt, tools, progress) {
       acc += dt;
