@@ -1,0 +1,24 @@
+{
+  "about": "Regions cut from Satie takes that contain more than one event. Each realized 'single' mallet take holds 3-4 separate thuds over 4 s, and two fold takes hold 2-3 slaps, so one strike played several. Regions were chosen from the loudness envelope: from just before the first impact to just before the next. scripts/prepare-takes.mjs applies them to satie/realized/samples.json (Satie's file, untouched) and writes public/satie/samples.json.",
+  "source": "satie/realized/samples.json",
+  "edits": {
+    "Audio/generation/single_heavy_wooden_mallet_imp":   { "regionS": [0.04, 0.95], "fadeOutS": 0.10 },
+    "Audio/generation/single_heavy_wooden_mallet_imp#2": { "regionS": [0.68, 1.48], "fadeOutS": 0.10 },
+    "Audio/generation/single_heavy_wooden_mallet_imp#3": { "regionS": [0.81, 1.72], "fadeOutS": 0.10 },
+    "Audio/generation/single_heavy_wooden_mallet_imp#4": { "regionS": [0.72, 1.62], "fadeOutS": 0.10 },
+    "Audio/generation/single_wet_palm_fold_and_flip_":   { "regionS": [0.10, 0.72], "fadeOutS": 0.12 },
+    "Audio/generation/single_wet_palm_fold_and_flip_#2": { "regionS": [1.27, 1.53], "fadeOutS": 0.08 },
+    "Audio/generation/single_wet_palm_fold_and_flip_#3": { "regionS": [0.40, 1.02], "fadeOutS": 0.12 }
+  },
+  "drop": {
+    "reason": "The user removed the crowd (2026-11-14); these clips belong to voices no longer in scene.satie.",
+    "clipPaths": [
+      "Audio/generation/small_gathering_of_fifteen_spe",
+      "Audio/generation/small_group_gently_clapping_ha",
+      "Audio/generation/gentle_wordless_festival_gathe",
+      "Audio/generation/small_gathering_of_fifteen_peo",
+      "Audio/generation/small_gathering_of_fifteen_peo#2",
+      "Audio/generation/small_gathering_of_fifteen_peo#3"
+    ]
+  }
+}

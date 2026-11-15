@@ -1,0 +1,147 @@
+# First person, on desktop or in a Quest 3 headset: you walk: the developer's layout, as fixtures
+world First person, on desktop or in a Quest 3 headset: you walk
+  seed 1
+  size 28
+  terrain relief 0 roughness 0
+  ground gravel weight 1
+  ground flagstone weight 0.5
+  fixture usu mortar (usu) size 0.84x0.7x0.84 material wood (heavy keyaki stump, bowl carved in the top) at 0,0
+  fixture oke hand-water bucket size 0.4x0.26x0.4 material wood, filled with water at -0.95,0.35
+  fixture seiro rice steamer stack size 0.62x0.71x0.62 material wooden steamer boxes over a pot of boiling water at 3.3,-1.4
+  fixture kamado clay stove size 1.1x0.85x0.9 material clay at 3.3,-1.4
+  fixture takibi bonfire size 1.1x1x1.1 material iron basket of burning split logs at -6.5,4.2
+  fixture bonsho temple bell size 1.1x1.65x1.1 material bronze at -12,-5
+  fixture turner turner size 1x1x1 material person, kneeling at -0.78,-0.08
+  fixture shrine_hall shrine hall size 14.2x6.2x8.7 material wood and plaster on a stone platform at 0,-12
+  fixture stall kohaku curtain stall size 11x2.6x0.1 material fabric curtain porous 1 at 0,-5.7
+  fixture table mochi table size 1.9x0.78x0.8 material wood at -3.3,-1.5
+  fixture shoro bell pavilion size 4.6x0.6x4.6 material stone base, open wooden posts porous 1 at -12,-5
+  weather rain 0 wind 0.05 fog 0
+  time 23:00 season winter temp -2
+
+loop wood-fire-crackling-steady
+    source_id stove_fire
+    randomstart
+    radius 0.8
+    at kamado
+    spl 54
+    distance_model free_field_v1
+    visual sphere
+
+gen steamer_texture
+    prompt steady steam escaping between wooden rice steamer boxes, continuous fine pressurized hiss with gentle irregular fluctuations, close dry recording, no whistle, no voices, seamless ambience loop, consistent texture
+    duration 30
+    loopable
+
+loop steamer_texture
+    source_id steamer_hiss
+    randomstart
+    radius 0.3
+    at seiro
+    spl 51
+    distance_model free_field_v1
+    visual sphere
+
+gen boiling_pot_texture
+    prompt water bubbling steadily in a cooking pot at a moderate rolling boil, rounded liquid bubbles breaking at the surface, close dry recording, no lid rattling, no voices, seamless ambience loop, consistent texture
+    duration 30
+    loopable
+
+loop boiling_pot_texture
+    source_id pot_bubbling
+    randomstart
+    radius 0.3
+    at kamado
+    spl 54
+    distance_model free_field_v1
+    visual sphere
+
+gen bonfire_texture
+    prompt split logs burning steadily in an open iron fire basket, lively wood crackles and irregular ember pops with steady flame combustion, close dry recording, no wind, no voices, seamless ambience loop, consistent texture
+    duration 30
+    loopable
+
+loop bonfire_texture
+    source_id bonfire
+    randomstart
+    radius 0.55
+    at takibi
+    spl 65
+    distance_model free_field_v1
+    visual sphere
+
+# the world's soundscapes, decided before the sounds (keep these blocks; add each soundscape's own beds to its `sounds` line by source_id; beds that are the same everywhere go in the `kind world` block's `sounds` line)
+soundscape shrine_courtyard
+  label Shrine courtyard
+  share snowy shrine courtyard with a rice-pounding stall
+  kind open
+  regions courtyard path station
+  objects usu oke seiro kamado takibi bonsho pounder turner helper shrine_hall stall table shoro
+  why One continuous open courtyard: walking along the path, into the mortar interaction area or toward the fires and open bell pavilion changes source balance gradually, with no supported acoustic jump.
+
+soundscape everywhere
+  kind world
+
+on pound gen single heavy wooden mallet impact into wet glutinous rice in a solid wooden mortar, immediate weighty round wooden thud with grainy rice crushing and a sticky elastic slap, close dry recording, no leading silence, no voices
+    source_id pound
+    at usu
+    spl 82
+    pitch follow mochi_progress 0to1 1.06to0.9
+    cooldown 0.06
+    distance_model free_field_v1
+    variants 4
+    visual sphere
+
+on turn gen single wet palm fold and flip of sticky rice dough onto itself, immediate rounded wet slap with a short dough squelch, close dry recording, no leading silence, no voices
+    source_id turn
+    at usu
+    spl 72
+    cooldown 0.08
+    distance_model free_field_v1
+    variants 3
+    visual sphere
+
+on dip gen single hand dipping into water in a small wooden bucket, immediate small splash followed by a few water droplets, close dry recording, no leading silence, no voices
+    source_id dip
+    at oke
+    spl 60
+    cooldown 0.1
+    distance_model free_field_v1
+    variants 3
+    visual sphere
+
+on steamer_open gen single wooden rice steamer box lifted from its stack, immediate light wooden separation knock and brief gust of escaping steam, close dry recording, no leading silence, no voices
+    source_id steamer_open
+    at seiro
+    spl 63
+    cooldown 0.2
+    distance_model free_field_v1
+    variants 3
+    visual sphere
+
+on rice_drop gen single two kilogram mass of freshly steamed sticky rice dropping onto wood, immediate heavy yielding wet plop with a short grainy settling tail, close dry recording, no leading silence, no voices
+    source_id rice_drop
+    at usu
+    spl 70
+    cooldown 0.15
+    distance_model free_field_v1
+    variants 3
+    visual sphere
+
+on bell_toll gen single large bronze Japanese bonsho temple bell struck by a wooden hanging log, immediate deep rounded bronze attack followed by a rich low beating hum decaying naturally for twenty seconds, close dry recording, no additional strikes, no voices
+    source_id bell_toll
+    at bonsho
+    spl 89
+    cooldown 0.5
+    distance_model free_field_v1
+    variants 3
+    visual sphere
+
+on step gen single boot footstep on snow-dusted {text}, immediate sole contact with granular snow compression and underlying surface contact, close dry recording, no leading silence
+    source_id footsteps
+    at player
+    spl 64
+    cooldown 0.13
+    distance_model free_field_v1
+    variants 6
+    visual sphere

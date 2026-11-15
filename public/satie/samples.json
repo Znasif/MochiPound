@@ -1,0 +1,635 @@
+{
+ "Audio/wood-fire-crackling-steady": {
+  "qa": {
+   "heard": "Oak wood crackling and popping steadily in a tiled stove, creating a warm fire texture.",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/f261f952-5809-4beb-acc6-79e0549ae04a",
+  "name": "wood-fire-crackling-steady",
+  "prompt": "wood-fire-crackling-steady",
+  "reused": true,
+  "source": "library",
+  "licence": "CC0",
+  "license": "CC0",
+  "sampleId": "f261f952-5809-4beb-acc6-79e0549ae04a",
+  "attribution": "Zbylut (Freesound)"
+ },
+ "Audio/generation/single_hand_dipping_into_water": {
+  "qa": {
+   "heard": "a hand dipping into water with a small splash and quiet water droplets",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/c294b444-615f-4100-a452-23ddb9e1bedf.mp3",
+  "name": "hand-dipping-water-small",
+  "prompt": "single hand dipping into water in a small wooden bucket, immediate small splash followed by a few water droplets, close dry recording, no leading silence, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "c294b444-615f-4100-a452-23ddb9e1bedf",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_heavy_wooden_mallet_imp": {
+  "qa": {
+   "heard": "A series of distinct, isolated wooden mallet impacts into sticky rice with a clear dry thud",
+   "verdict": "pass"
+  },
+  "url": "takes/030134f0-ac30-4d03-96b5-3208415294b8.wav",
+  "name": "heavy-wooden-mallet-impact-wet",
+  "prompt": "single heavy wooden mallet impact into wet glutinous rice in a solid wooden mortar, immediate weighty round wooden thud with grainy rice crushing and a sticky elastic slap, close dry recording, no leading silence, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "030134f0-ac30-4d03-96b5-3208415294b8",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  },
+  "sha256": "a02d7f243cd825cfb90723a5c899bb44b8071681e314672ed7cda3572210055f",
+  "edit": {
+   "from": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/030134f0-ac30-4d03-96b5-3208415294b8.mp3",
+   "sourceSampleId": "030134f0-ac30-4d03-96b5-3208415294b8",
+   "regionS": [
+    0.04,
+    0.95
+   ],
+   "fadeOutS": 0.1,
+   "reason": "single impact cut from a multi-event take"
+  }
+ },
+ "Audio/generation/single_large_bronze_japanese_b": {
+  "qa": {
+   "heard": "a clear single strike on a bronze temple bell with sustained resonance",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/7febf35f-d787-414f-872e-e4b24a7b6cdc.mp3",
+  "name": "large-bronze-japanese-bonsho",
+  "prompt": "single large bronze Japanese bonsho temple bell struck by a wooden hanging log, immediate deep rounded bronze attack followed by a rich low beating hum decaying naturally for twenty seconds, close dry recording, no additional strikes, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "7febf35f-d787-414f-872e-e4b24a7b6cdc",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_wet_palm_fold_and_flip_": {
+  "qa": {
+   "heard": "close-up sticky squelching and crinkling sounds",
+   "verdict": "pass"
+  },
+  "url": "takes/bdb1a762-94e0-4261-9239-4d1d81bf0b51.wav",
+  "name": "wet-palm-fold-flip-sticky-rice",
+  "prompt": "single wet palm fold and flip of sticky rice dough onto itself, immediate rounded wet slap with a short dough squelch, close dry recording, no leading silence, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "bdb1a762-94e0-4261-9239-4d1d81bf0b51",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  },
+  "sha256": "dfcdb262f4b63ad054d70d7dbd44fb2fcec299a02181a539de019e7c4e5c36ab",
+  "edit": {
+   "from": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/bdb1a762-94e0-4261-9239-4d1d81bf0b51.mp3",
+   "sourceSampleId": "bdb1a762-94e0-4261-9239-4d1d81bf0b51",
+   "regionS": [
+    0.1,
+    0.72
+   ],
+   "fadeOutS": 0.12,
+   "reason": "single impact cut from a multi-event take"
+  }
+ },
+ "Audio/generation/single_wooden_rice_steamer_box": {
+  "qa": {
+   "heard": "a quiet hiss of steam followed by a soft wooden knock",
+   "verdict": "pass",
+   "regenerated": true
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/ee10d0f2-5bf0-4812-b59c-92f7d10734df.mp3",
+  "name": "wooden-rice-steamer-box-lifted",
+  "prompt": "single wooden rice steamer box lifted from its stack, immediate light wooden separation knock and brief gust of escaping steam, close dry recording, no leading silence, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "ee10d0f2-5bf0-4812-b59c-92f7d10734df",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/split_logs_burning_steadily_in": {
+  "qa": {
+   "heard": "close-up crisp wood crackles and popping embers from a fire",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/f80cbbfc-32f9-4fd7-8686-fd7023de1b98.mp3",
+  "name": "split-logs-burning-steadily",
+  "prompt": "split logs burning steadily in an open iron fire basket, lively wood crackles and irregular ember pops with steady flame combustion, close dry recording, no wind, no voices, seamless ambience loop, consistent texture",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "f80cbbfc-32f9-4fd7-8686-fd7023de1b98",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/steady_steam_escaping_between_": {
+  "qa": {
+   "heard": "steady dry steam hiss with subtle fluctuations",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/ad8f56e9-733b-4660-8226-930773288cd4.mp3",
+  "name": "steady-steam-escaping-wooden",
+  "prompt": "steady steam escaping between wooden rice steamer boxes, continuous fine pressurized hiss with gentle irregular fluctuations, close dry recording, no whistle, no voices, seamless ambience loop, consistent texture",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "ad8f56e9-733b-4660-8226-930773288cd4",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/water_bubbling_steadily_in_a_c": {
+  "qa": {
+   "heard": "steady water boiling and bubbling close-up",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/9e177a23-a69e-422e-b789-c7dd950ee5a4.mp3",
+  "name": "water-bubbling-steadily",
+  "prompt": "water bubbling steadily in a cooking pot at a moderate rolling boil, rounded liquid bubbles breaking at the surface, close dry recording, no lid rattling, no voices, seamless ambience loop, consistent texture",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "9e177a23-a69e-422e-b789-c7dd950ee5a4",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_hand_dipping_into_water#2": {
+  "qa": {
+   "heard": "a single hand splash/dip into water followed by light dripping sounds",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/ba9af6ac-49f9-4110-bb5e-2be77117dc45.mp3",
+  "name": "hand-dipping-water-small",
+  "prompt": "single hand dipping into water in a small wooden bucket, immediate small splash followed by a few water droplets, close dry recording, no leading silence, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "ba9af6ac-49f9-4110-bb5e-2be77117dc45",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_hand_dipping_into_water#3": {
+  "qa": {
+   "heard": "A hand dipping into water with a small splash and squishing water droplets, very dry and close",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/b6059846-4f9a-4bdb-9696-e95acfda81bf.mp3",
+  "name": "hand-dipping-water-small",
+  "prompt": "single hand dipping into water in a small wooden bucket, immediate small splash followed by a few water droplets, close dry recording, no leading silence, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "b6059846-4f9a-4bdb-9696-e95acfda81bf",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_heavy_wooden_mallet_imp#2": {
+  "qa": {
+   "heard": "heavy wooden impacts into a thick, sticky substance",
+   "verdict": "pass"
+  },
+  "url": "takes/7bbece85-3e25-40a0-bf63-b99de989e0d1.wav",
+  "name": "heavy-wooden-mallet-impact-wet",
+  "prompt": "single heavy wooden mallet impact into wet glutinous rice in a solid wooden mortar, immediate weighty round wooden thud with grainy rice crushing and a sticky elastic slap, close dry recording, no leading silence, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "7bbece85-3e25-40a0-bf63-b99de989e0d1",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  },
+  "sha256": "df9cfddfe432c5283e6c53beab2746376d6fae063bf8135f8e89258a5eb96a1b",
+  "edit": {
+   "from": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/7bbece85-3e25-40a0-bf63-b99de989e0d1.mp3",
+   "sourceSampleId": "7bbece85-3e25-40a0-bf63-b99de989e0d1",
+   "regionS": [
+    0.68,
+    1.48
+   ],
+   "fadeOutS": 0.1,
+   "reason": "single impact cut from a multi-event take"
+  }
+ },
+ "Audio/generation/single_heavy_wooden_mallet_imp#3": {
+  "qa": {
+   "heard": "rhythmic heavy wooden thuds with rice crushing sounds",
+   "verdict": "pass"
+  },
+  "url": "takes/47142d1e-2b5c-4898-a63e-d6d09461f1ef.wav",
+  "name": "heavy-wooden-mallet-impact-wet",
+  "prompt": "single heavy wooden mallet impact into wet glutinous rice in a solid wooden mortar, immediate weighty round wooden thud with grainy rice crushing and a sticky elastic slap, close dry recording, no leading silence, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "47142d1e-2b5c-4898-a63e-d6d09461f1ef",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  },
+  "sha256": "9fff9ffa5064a709a97b350c672c271ac79321c80f015fdfbea868d54f030f40",
+  "edit": {
+   "from": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/47142d1e-2b5c-4898-a63e-d6d09461f1ef.mp3",
+   "sourceSampleId": "47142d1e-2b5c-4898-a63e-d6d09461f1ef",
+   "regionS": [
+    0.81,
+    1.72
+   ],
+   "fadeOutS": 0.1,
+   "reason": "single impact cut from a multi-event take"
+  }
+ },
+ "Audio/generation/single_heavy_wooden_mallet_imp#4": {
+  "qa": {
+   "heard": "single heavy wooden mallet impact into wet rice",
+   "verdict": "pass"
+  },
+  "url": "takes/c949d7c8-fc34-43c1-9293-5bef674daed5.wav",
+  "name": "heavy-wooden-mallet-impact-wet",
+  "prompt": "single heavy wooden mallet impact into wet glutinous rice in a solid wooden mortar, immediate weighty round wooden thud with grainy rice crushing and a sticky elastic slap, close dry recording, no leading silence, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "c949d7c8-fc34-43c1-9293-5bef674daed5",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  },
+  "sha256": "951ec70c57d5e1458c659f6a816cf729f44030a269018719fd989f0c06d50c70",
+  "edit": {
+   "from": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/c949d7c8-fc34-43c1-9293-5bef674daed5.mp3",
+   "sourceSampleId": "c949d7c8-fc34-43c1-9293-5bef674daed5",
+   "regionS": [
+    0.72,
+    1.62
+   ],
+   "fadeOutS": 0.1,
+   "reason": "single impact cut from a multi-event take"
+  }
+ },
+ "Audio/generation/single_large_bronze_japanese_b#2": {
+  "qa": {
+   "heard": "a single deep bronze temple bell strike with a long natural decay",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/f714e933-ebc9-4192-bceb-074efaf5c0ab.mp3",
+  "name": "large-bronze-japanese-bonsho",
+  "prompt": "single large bronze Japanese bonsho temple bell struck by a wooden hanging log, immediate deep rounded bronze attack followed by a rich low beating hum decaying naturally for twenty seconds, close dry recording, no additional strikes, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "f714e933-ebc9-4192-bceb-074efaf5c0ab",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_wet_palm_fold_and_flip_#2": {
+  "qa": {
+   "heard": "a crisp, dry wet slapping and folding squelch sound",
+   "verdict": "pass"
+  },
+  "url": "takes/80c6cbc7-92ce-41b5-9d11-f096be9a1ff7.wav",
+  "name": "wet-palm-fold-flip-sticky-rice",
+  "prompt": "single wet palm fold and flip of sticky rice dough onto itself, immediate rounded wet slap with a short dough squelch, close dry recording, no leading silence, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "80c6cbc7-92ce-41b5-9d11-f096be9a1ff7",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  },
+  "sha256": "45186018d6bc10bfa0d8c2c8aa88a2eb53e383a6b494780c0249123a618db6f9",
+  "edit": {
+   "from": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/80c6cbc7-92ce-41b5-9d11-f096be9a1ff7.mp3",
+   "sourceSampleId": "80c6cbc7-92ce-41b5-9d11-f096be9a1ff7",
+   "regionS": [
+    1.27,
+    1.53
+   ],
+   "fadeOutS": 0.08,
+   "reason": "single impact cut from a multi-event take"
+  }
+ },
+ "Audio/generation/single_wet_palm_fold_and_flip_#3": {
+  "qa": {
+   "heard": "a close, dry wet slap and squelch of sticky dough being folded",
+   "verdict": "pass"
+  },
+  "url": "takes/6b284cf2-7c85-407e-bd54-ff45f790d270.wav",
+  "name": "wet-palm-fold-flip-sticky-rice",
+  "prompt": "single wet palm fold and flip of sticky rice dough onto itself, immediate rounded wet slap with a short dough squelch, close dry recording, no leading silence, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "6b284cf2-7c85-407e-bd54-ff45f790d270",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  },
+  "sha256": "158d63b7e22a099e7c8dd8fa282fcbc8857f2aee65334d7e5207fadff1db3276",
+  "edit": {
+   "from": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/6b284cf2-7c85-407e-bd54-ff45f790d270.mp3",
+   "sourceSampleId": "6b284cf2-7c85-407e-bd54-ff45f790d270",
+   "regionS": [
+    0.4,
+    1.02
+   ],
+   "fadeOutS": 0.12,
+   "reason": "single impact cut from a multi-event take"
+  }
+ },
+ "Audio/generation/single_wooden_rice_steamer_box#2": {
+  "qa": {
+   "heard": "a light wooden impact/clack followed by a soft, short puff of steam",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/2cd38de4-2ef2-4425-9d4c-e8891051819a.mp3",
+  "name": "wooden-rice-steamer-box-lifted",
+  "prompt": "single wooden rice steamer box lifted from its stack, immediate light wooden separation knock and brief gust of escaping steam, close dry recording, no leading silence, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "2cd38de4-2ef2-4425-9d4c-e8891051819a",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_wooden_rice_steamer_box#3": {
+  "qa": {
+   "heard": "a wooden click followed by a gentle puff of steam",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/6dab42b3-7751-4207-ac9d-d2e607640678.mp3",
+  "name": "wooden-rice-steamer-box-lifted",
+  "prompt": "single wooden rice steamer box lifted from its stack, immediate light wooden separation knock and brief gust of escaping steam, close dry recording, no leading silence, no voices",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "6dab42b3-7751-4207-ac9d-d2e607640678",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_boot_footstep_on_snow-d_qaaeme__gravel_1dmowl6__t0": {
+  "qa": {
+   "heard": "a single dry, crisp boot footstep crunching on snow and gravel",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/dea18350-12b1-4559-9a4e-eaeb234a0e39.mp3",
+  "name": "boot-footstep-snow-dusted",
+  "prompt": "single boot footstep on snow-dusted gravel, immediate sole contact with granular snow compression and underlying surface contact, close dry recording, no leading silence",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "dea18350-12b1-4559-9a4e-eaeb234a0e39",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_boot_footstep_on_snow-d_qaaeme__gravel_1dmowl6__t1": {
+  "qa": {
+   "heard": "A close, crisp, single boot footstep compressing snow and gravel, completely dry",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/06175a13-89a0-4064-9f59-0050915a781b.mp3",
+  "name": "boot-footstep-snow-dusted",
+  "prompt": "single boot footstep on snow-dusted gravel, immediate sole contact with granular snow compression and underlying surface contact, close dry recording, no leading silence",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "06175a13-89a0-4064-9f59-0050915a781b",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_boot_footstep_on_snow-d_qaaeme__gravel_1dmowl6__t2": {
+  "qa": {
+   "heard": "a single dry step on snow-dusted gravel with clear footstep impact and granular crunch",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/d60ef10f-0f8d-49a0-8f11-5c4449049339.mp3",
+  "name": "boot-footstep-snow-dusted",
+  "prompt": "single boot footstep on snow-dusted gravel, immediate sole contact with granular snow compression and underlying surface contact, close dry recording, no leading silence",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "d60ef10f-0f8d-49a0-8f11-5c4449049339",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_boot_footstep_on_snow-d_qaaeme__gravel_1dmowl6__t3": {
+  "qa": {
+   "heard": "a single dry footstep crushing granular snow over gravel",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/b8d6eccd-4859-42ca-9547-369bbc48e661.mp3",
+  "name": "boot-footstep-snow-dusted",
+  "prompt": "single boot footstep on snow-dusted gravel, immediate sole contact with granular snow compression and underlying surface contact, close dry recording, no leading silence",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "b8d6eccd-4859-42ca-9547-369bbc48e661",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_boot_footstep_on_snow-d_qaaeme__gravel_1dmowl6__t4": {
+  "qa": {
+   "heard": "a single dry step on snow-dusted gravel with clear sole contact and compression",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/9b3553ca-a8eb-48b7-a8ea-4c7caad06840.mp3",
+  "name": "boot-footstep-snow-dusted",
+  "prompt": "single boot footstep on snow-dusted gravel, immediate sole contact with granular snow compression and underlying surface contact, close dry recording, no leading silence",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "9b3553ca-a8eb-48b7-a8ea-4c7caad06840",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_boot_footstep_on_snow-d_qaaeme__gravel_1dmowl6__t5": {
+  "qa": {
+   "heard": "a close-up, dry single boot footstep crunching on snow and gravel",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/8cda280e-e23e-4c58-b189-6dd18cfe4032.mp3",
+  "name": "boot-footstep-snow-dusted",
+  "prompt": "single boot footstep on snow-dusted gravel, immediate sole contact with granular snow compression and underlying surface contact, close dry recording, no leading silence",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "8cda280e-e23e-4c58-b189-6dd18cfe4032",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_boot_footstep_on_snow-d_qaaeme__flagstone_1hap2qk__t0": {
+  "qa": {
+   "heard": "a close-up, dry sound of a boot stepping on snow over a hard surface with crisp compression and stone contact",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/24f5f4fb-1429-43a4-b1e6-bda3d8ec129c.mp3",
+  "name": "boot-footstep-snow-dusted",
+  "prompt": "single boot footstep on snow-dusted flagstone, immediate sole contact with granular snow compression and underlying surface contact, close dry recording, no leading silence",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "24f5f4fb-1429-43a4-b1e6-bda3d8ec129c",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_boot_footstep_on_snow-d_qaaeme__flagstone_1hap2qk__t1": {
+  "qa": {
+   "heard": "a single dry crunching footstep on snow over a hard surface",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/901d3ba5-7b44-4341-8c68-2ad6150c3b38.mp3",
+  "name": "boot-footstep-snow-dusted",
+  "prompt": "single boot footstep on snow-dusted flagstone, immediate sole contact with granular snow compression and underlying surface contact, close dry recording, no leading silence",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "901d3ba5-7b44-4341-8c68-2ad6150c3b38",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_boot_footstep_on_snow-d_qaaeme__flagstone_1hap2qk__t2": {
+  "qa": {
+   "heard": "a single dry boot footstep crunching on snow and hard surface",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/3b067255-3f9d-45e4-b944-ec559d539f03.mp3",
+  "name": "boot-footstep-snow-dusted",
+  "prompt": "single boot footstep on snow-dusted flagstone, immediate sole contact with granular snow compression and underlying surface contact, close dry recording, no leading silence",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "3b067255-3f9d-45e4-b944-ec559d539f03",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_boot_footstep_on_snow-d_qaaeme__flagstone_1hap2qk__t3": {
+  "qa": {
+   "heard": "a single dry, crisp footstep crunching on snow with stone contact underneath",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/e4ec2d0d-8a7a-4284-a5ce-9008e43a11e6.mp3",
+  "name": "boot-footstep-snow-dusted",
+  "prompt": "single boot footstep on snow-dusted flagstone, immediate sole contact with granular snow compression and underlying surface contact, close dry recording, no leading silence",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "e4ec2d0d-8a7a-4284-a5ce-9008e43a11e6",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_boot_footstep_on_snow-d_qaaeme__flagstone_1hap2qk__t4": {
+  "qa": {
+   "heard": "a single dry step on snow over a hard surface",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/9378998f-454b-42ce-bf95-d322b3da72b9.mp3",
+  "name": "boot-footstep-snow-dusted",
+  "prompt": "single boot footstep on snow-dusted flagstone, immediate sole contact with granular snow compression and underlying surface contact, close dry recording, no leading silence",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "9378998f-454b-42ce-bf95-d322b3da72b9",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_boot_footstep_on_snow-d_qaaeme__flagstone_1hap2qk__t5": {
+  "qa": {
+   "heard": "a single dry step on crunching snow and stone",
+   "verdict": "pass"
+  },
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/f62f8df0-8ce4-4ae5-91dc-8edc86f9b5c7.mp3",
+  "name": "boot-footstep-snow-dusted",
+  "prompt": "single boot footstep on snow-dusted flagstone, immediate sole contact with granular snow compression and underlying surface contact, close dry recording, no leading silence",
+  "reused": true,
+  "source": "generated",
+  "licence": "generated:elevenlabs",
+  "sampleId": "f62f8df0-8ce4-4ae5-91dc-8edc86f9b5c7",
+  "generator": {
+   "model": "eleven_text_to_sound_v2",
+   "provider": "elevenlabs"
+  }
+ },
+ "Audio/generation/single_large_bronze_japanese_b#3": {
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/5b604b1c-f34b-4984-92a7-cf17d2f060cd.mp3",
+  "sampleId": "5b604b1c-f34b-4984-92a7-cf17d2f060cd",
+  "reused": true,
+  "prompt": "single large bronze Japanese bonsho temple bell struck by a wooden hanging log, immediate deep rounded bronze attack followed by a rich low beating hum decaying naturally for twenty seconds, close dry recording, no additional strikes, no voices",
+  "source": "library",
+  "name": "large-bronze-tower-bell-3",
+  "license": "Generated (ElevenLabs, via Satie)",
+  "similarity": 0.758,
+  "licence": "Generated (ElevenLabs, via Satie)",
+  "sha256": "8f26c2472752df7da5cf0fdfd51594580100b4e5b1982ec5594bf910d145c2b8"
+ },
+ "Audio/generation/single_two_kilogram_mass_of_fr#3": {
+  "url": "https://nfcuwfkfctfpdrwkgvtm.supabase.co/storage/v1/object/public/community-samples/6b4e7a9f-f88b-4baa-ba7f-7c3edcb4cf22/game-takes/a76c7db3-3fa4-4862-bc2d-5d437ec7dba9.mp3",
+  "sampleId": "a76c7db3-3fa4-4862-bc2d-5d437ec7dba9",
+  "reused": false,
+  "prompt": "single two kilogram mass of freshly steamed sticky rice dropping onto wood, immediate heavy yielding wet plop with a short grainy settling tail, close dry recording, no leading silence, no voices",
+  "source": "generated",
+  "name": "two-kilogram-mass-freshly",
+  "licence": "generated:elevenlabs",
+  "generator": {
+   "provider": "elevenlabs",
+   "model": "eleven_text_to_sound_v2"
+  },
+  "qa": {
+   "heard": "a wet impact and squelching sound of sticky rice hitting a surface",
+   "verdict": "pass"
+  },
+  "sha256": "a17436274512bcb04f9a620b8467ba83ff9f65c57a9b1e64b2a6c8ba03a01a49"
+ }
+}

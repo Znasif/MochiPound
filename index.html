@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mochitsuki</title>
+  <style>
+    :root {
+      --ink: #f4efe6; --muted: #b9b2a6; --dim: #8d877d; --red: #c8202b; --gold: #e8c27a;
+      --panel: rgba(12, 14, 22, 0.78); --line: rgba(244, 239, 230, 0.16);
+      --sumi: #3b2516; --sumi-soft: #6e5643; --washi: #f5ecda; --washi-edge: #e6d6b8; --wood: #7a4a26;
+      /* mochi flavours */
+      --plain: #fbf8f2; --plain-d: #e3d8c6; --sakura: #f9dbe2; --sakura-d: #e7b3c0;
+      --yomogi: #d5e6c6; --yomogi-d: #a8c690; --kinako: #f0dfae; --kinako-d: #d4b770;
+      --goma: #dcd8d3; --goma-d: #aaa39a;
+      --serif: "Shippori Mincho", "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", "Iowan Old Style", Georgia, serif;
+    }
+    html, body { margin: 0; height: 100%; background: #05070d; color: var(--ink); overflow: hidden;
+      font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+    canvas { display: block; }
+    .hidden { display: none !important; }
+
+    /* ================= title screen ================= */
+    #overlay { position: fixed; inset: 0; z-index: 10; overflow: hidden;
+      background:
+        radial-gradient(circle at 80% 14%, rgba(255, 246, 220, 0.16), transparent 18%),
+        radial-gradient(ellipse 60% 70% at 66% 62%, rgba(255, 214, 160, 0.10), transparent 70%),
+        linear-gradient(180deg, rgba(8, 10, 24, 0.86), rgba(14, 10, 12, 0.9)); }
+    /* leaving: a fade over the start of play (main.js adds .hidden) */
+    #overlay.hidden { display: block !important; pointer-events: none; animation: leave 0.55s ease-in forwards; }
+    @keyframes leave { 0% { opacity: 1; } 30% { opacity: 1; filter: brightness(1.6); } 100% { opacity: 0; visibility: hidden; } }
+    .screen { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(300px, 400px) 1fr; gap: 3vw;
+      padding: clamp(22px, 5vh, 56px) clamp(20px, 5vw, 80px); box-sizing: border-box; }
+    .left { display: flex; flex-direction: column; min-height: 0; z-index: 1; }
+
+    /* title */
+    .brand { display: flex; align-items: center; gap: 16px; animation: rise 0.8s ease-out both; }
+    .seal { flex: none; width: 54px; height: 54px; display: grid; place-items: center; background: var(--red); color: #fff4e8;
+      font: 600 32px/1 var(--serif); border-radius: 7px; transform: rotate(-5deg);
+      box-shadow: 0 0 0 2px rgba(255, 240, 220, 0.14) inset, 0 8px 26px rgba(200, 32, 43, 0.4); }
+    .brand h1 { margin: 0; font: 600 clamp(38px, 5.6vw, 64px)/0.95 var(--serif); letter-spacing: 0.01em; color: var(--plain);
+      text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35), 0 0 36px rgba(255, 240, 210, 0.18); }
+    .brand .kana { margin-top: 6px; font: 400 14px/1 var(--serif); letter-spacing: 0.55em; color: var(--gold); }
+    .tag { margin: 14px 0 0; color: var(--muted); font-size: 15px; max-width: 34ch; animation: rise 0.8s 0.1s ease-out both; }
+
+    /* the menu: a stack of mochi */
+    .menu { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin-top: clamp(22px, 5vh, 52px); }
+    /* the mochi drop in once; after that (.settled, src/menu.js) hovering jiggles them instead */
+    .menu:not(.settled) > * { animation: drop 0.6s cubic-bezier(.3, 1.6, .5, 1) both; }
+    .menu > :nth-child(1) { animation-delay: 0.15s; } .menu > :nth-child(2) { animation-delay: 0.22s; }
+    .menu > :nth-child(3) { animation-delay: 0.29s; } .menu > :nth-child(4) { animation-delay: 0.36s; }
+    .menu > :nth-child(5) { animation-delay: 0.43s; } .menu > :nth-child(6) { animation-delay: 0.5s; }
+    .menu > :nth-child(7) { animation-delay: 0.57s; }
+    .mochi, #vr-slot button, #vr-slot a {
+      --c: var(--plain); --d: var(--plain-d);
+      appearance: none; position: relative; display: inline-flex; align-items: baseline; gap: 10px; cursor: pointer;
+      border: 0; border-radius: 999px / 70%; padding: 11px 24px 12px; color: var(--sumi); text-decoration: none;
+      font: 600 19px/1.15 var(--serif); letter-spacing: 0.04em;
+      background: radial-gradient(ellipse 80% 70% at 38% 28%, #fff 0%, var(--c) 48%, var(--d) 100%);
+      box-shadow: inset 0 -5px 10px rgba(120, 90, 50, 0.18), inset 0 3px 6px rgba(255, 255, 255, 0.9),
+        0 7px 0 -2px rgba(0, 0, 0, 0.25), 0 10px 22px rgba(0, 0, 0, 0.35);
+      transform-origin: 50% 100%; transition: filter 0.15s; }
+    .settled .mochi:hover, .settled .mochi:focus-visible, .settled .mochi.open, #vr-slot button:hover, #vr-slot button:focus-visible {
+      animation: jiggle 0.45s ease-out; filter: brightness(1.04); outline: none; }
+    .mochi:focus-visible { outline: none; }
+    .stage.panel-open #scene, .stage.panel-open #hint { opacity: 0.3; transition: opacity 0.25s; }
+    #scene, #hint { transition: opacity 0.25s; }
+    .mochi:focus-visible, #vr-slot button:focus-visible { box-shadow: 0 0 0 3px var(--gold), inset 0 -5px 10px rgba(120, 90, 50, 0.18), 0 10px 22px rgba(0, 0, 0, 0.35); }
+    .mochi:active, #vr-slot button:active { transform: scale(1.07, 0.9); transition: transform 0.05s; }
+    .mochi.open { --c: #fffaf0; box-shadow: 0 0 0 3px var(--gold), inset 0 -5px 10px rgba(120, 90, 50, 0.18), 0 10px 22px rgba(0, 0, 0, 0.35); }
+    .mochi .value { font: 500 12px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.02em; color: var(--sumi-soft); }
+    .sakura { --c: var(--sakura); --d: var(--sakura-d); }
+    .yomogi { --c: var(--yomogi); --d: var(--yomogi-d); }
+    .kinako { --c: var(--kinako); --d: var(--kinako-d); }
+    .goma { --c: var(--goma); --d: var(--goma-d); }
+    /* the big one: a fat daifuku with a red dot */
+    #start { font-size: 26px; padding: 15px 34px 16px; letter-spacing: 0.06em; }
+    #start::after { content: ""; position: absolute; right: 16px; top: 14px; width: 9px; height: 9px; border-radius: 50%;
+      background: var(--red); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6); }
+    #start:disabled { cursor: wait; filter: saturate(0.4) brightness(0.8); animation: none; }
+    #start:disabled::after { background: #a99; }
+    /* three's VR button as a kinako mochi (it sets inline styles, hence !important) */
+    #vr-slot { display: block; }
+    #vr-slot button, #vr-slot a { --c: var(--kinako); --d: var(--kinako-d); position: relative !important; left: auto !important; bottom: auto !important;
+      width: auto !important; opacity: 1 !important; border: 0 !important; z-index: auto !important; color: var(--sumi) !important;
+      background: radial-gradient(ellipse 80% 70% at 38% 28%, #fff 0%, var(--kinako) 48%, var(--kinako-d) 100%) !important;
+      font: 600 17px/1.15 var(--serif) !important; padding: 11px 24px 12px !important; border-radius: 999px / 70% !important; }
+    #vr-slot.unsupported button, #vr-slot.unsupported a { filter: grayscale(1) brightness(0.75); font-size: 13px !important; cursor: default; animation: none; }
+
+    .status { margin-top: auto; padding-top: 18px; font-size: 12.5px; color: var(--muted); max-width: 380px; }
+    .status div + div { margin-top: 3px; }
+    #sound.silent { color: #e9b36a; }
+
+    /* ----- the pounding scene ----- */
+    .stage { position: relative; display: grid; place-items: center; min-height: 0; }
+    #scene { width: min(100%, 620px, 78vh); height: auto; overflow: visible; cursor: pointer; animation: rise 0.9s 0.2s ease-out both;
+      -webkit-tap-highlight-color: transparent; }
+    #scene:focus-visible { outline: none; }
+    #scene:focus-visible #mochi-body { stroke: var(--gold); stroke-width: 3; }
+    #kine { transform-origin: 398px 140px; transform: rotate(30deg); }
+    #mochi { transform-origin: 210px 246px; }
+    #hand { transform: translate(-150px, 6px); }
+    #usu { transform-origin: 210px 346px; }
+    .steam { fill: none; stroke: rgba(255, 255, 255, 0.35); stroke-width: 5; stroke-linecap: round; opacity: 0; animation: steam 3.6s ease-in-out infinite; }
+    .steam:nth-of-type(2) { animation-delay: 1.2s; } .steam:nth-of-type(3) { animation-delay: 2.4s; }
+    @keyframes steam { 0% { opacity: 0; transform: translateY(10px); } 30% { opacity: 0.7; } 100% { opacity: 0; transform: translateY(-60px); } }
+    #pettan { font: 700 34px/1 var(--serif); fill: #fff6e6; paint-order: stroke; stroke: rgba(80, 40, 20, 0.6); stroke-width: 5px; opacity: 0; }
+    #hint { position: absolute; bottom: 2%; left: 50%; transform: translateX(-50%); font-size: 13px; color: var(--muted); letter-spacing: 0.03em;
+      white-space: nowrap; transition: opacity 0.6s; pointer-events: none; }
+    #hint b { color: var(--gold); font-weight: 600; }
+    #done-msg { font: 700 30px/1 var(--serif); fill: var(--gold); opacity: 0; paint-order: stroke; stroke: rgba(60, 30, 10, 0.7); stroke-width: 5px; }
+
+    /* ----- washi panels on a wooden tray ----- */
+    .panels { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-end; pointer-events: none; z-index: 2; }
+    .panel { pointer-events: auto; position: relative; width: min(440px, 100%); max-height: 92%; overflow: auto; box-sizing: border-box;
+      padding: 26px 26px 20px; color: var(--sumi); border-radius: 6px;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.55), transparent 40%),
+        repeating-linear-gradient(97deg, rgba(160, 130, 90, 0.035) 0 2px, transparent 2px 7px),
+        var(--washi);
+      border-top: 12px solid var(--wood); border-bottom: 12px solid var(--wood);
+      box-shadow: 0 0 0 1px var(--washi-edge) inset, 0 24px 60px rgba(0, 0, 0, 0.55); animation: unroll 0.3s ease-out both; }
+    .panel h2 { margin: 0 0 4px; font: 700 25px/1.1 var(--serif); letter-spacing: 0.04em; }
+    .panel h2::before { content: "\25CF  "; color: var(--red); font-size: 14px; vertical-align: middle; }
+    .panel .lead { margin: 0 0 16px; color: var(--sumi-soft); font-size: 14px; }
+    .panel .close { position: absolute; top: 10px; right: 10px; }
+    .cards { display: grid; gap: 10px; }
+    .card { appearance: none; display: block; width: 100%; text-align: left; cursor: pointer; color: var(--sumi);
+      font: inherit; padding: 11px 16px 12px; border: 0; border-radius: 999px / 80%;
+      background: radial-gradient(ellipse 80% 70% at 30% 25%, #fff 0%, #fbf7ef 55%, #ece2d0 100%);
+      box-shadow: inset 0 -4px 8px rgba(120, 90, 50, 0.16), 0 3px 0 rgba(0, 0, 0, 0.08), 0 6px 14px rgba(80, 50, 20, 0.15);
+      transition: transform 0.12s; transform-origin: 50% 100%; }
+    .card:hover, .card:focus-visible { animation: jiggle 0.4s ease-out; outline: none; }
+    .card:focus-visible { box-shadow: 0 0 0 3px var(--gold), inset 0 -4px 8px rgba(120, 90, 50, 0.16); }
+    .card.on { background: radial-gradient(ellipse 80% 70% at 30% 25%, #fff 0%, var(--sakura) 55%, var(--sakura-d) 100%); }
+    .card b { display: block; font: 600 15px/1.2 var(--serif); }
+    .card span { display: block; color: var(--sumi-soft); font-size: 12.5px; margin-top: 2px; }
+    .card.on b::after { content: "  \2713"; color: var(--red); }
+    .card:disabled { opacity: 0.55; cursor: default; animation: none; }
+    .note { margin-top: 12px; font-size: 13px; color: var(--sumi-soft); }
+    .icon { appearance: none; border: 0; cursor: pointer; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+      font: 600 15px/1 system-ui, sans-serif; color: var(--sumi);
+      background: radial-gradient(circle at 35% 30%, #fff, var(--plain) 50%, var(--plain-d)); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); }
+    .icon:hover, .icon:focus-visible { animation: jiggle 0.4s ease-out; outline: none; box-shadow: 0 0 0 3px var(--gold); }
+    #fullscreen { position: absolute; top: clamp(14px, 3vh, 26px); right: clamp(14px, 3vw, 26px); z-index: 3; }
+
+    .keys { display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; margin: 14px 0 4px; font-size: 14px; }
+    .keys b { color: var(--red); font-weight: 700; white-space: nowrap; font-family: var(--serif); }
+    .keys span { color: var(--sumi); }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .field { margin-bottom: 12px; }
+    .field label.cap { display: block; font: 600 12px/1 var(--serif); letter-spacing: 0.1em; color: var(--sumi-soft); margin-bottom: 6px; }
+    .panel select, .filebtn { appearance: none; font: inherit; font-size: 14px; color: var(--sumi); background: rgba(255, 255, 255, 0.7);
+      border: 1px solid var(--washi-edge); border-radius: 999px; padding: 9px 16px; cursor: pointer; max-width: 100%; }
+    .panel select { width: 100%; }
+    .panel select:focus-visible, .filebtn:focus-within { outline: 3px solid var(--gold); }
+    select option { color: #111; }
+    #rhythm-status { font-size: 13px; color: var(--sumi-soft); margin-top: 6px; }
+
+    @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+    @keyframes drop { 0% { opacity: 0; transform: translateY(-26px) scale(0.9, 1.1); } 70% { opacity: 1; transform: translateY(0) scale(1.08, 0.92); } 100% { transform: none; } }
+    @keyframes jiggle { 0% { transform: scale(1, 1); } 30% { transform: scale(1.08, 0.92); } 55% { transform: scale(0.96, 1.05); } 80% { transform: scale(1.02, 0.98); } 100% { transform: scale(1, 1); } }
+    @keyframes unroll { from { opacity: 0; transform: translateY(-10px) scaleY(0.92); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .menu > *, .brand, .tag, #scene, .panel { animation: none !important; } .steam { display: none; } }
+    @media (max-width: 860px) {
+      .screen { grid-template-columns: 1fr; grid-template-rows: auto auto auto auto 1fr; padding: 18px 16px; gap: 6px; }
+      .left { display: contents; }
+      .brand { grid-row: 1; }
+      .tag { grid-row: 2; margin-top: 6px; }
+      .stage { grid-row: 3; }
+      #scene { width: min(88vw, 36vh); }
+      .menu { grid-row: 4; flex-direction: row; flex-wrap: wrap; gap: 10px; margin-top: 8px; align-content: flex-start; }
+      .status { grid-row: 5; }
+      .panels { align-items: flex-end; justify-content: center; padding: 12px; }
+      .panel { max-height: 72vh; }
+      #hint { display: none; }
+    }
+
+    /* ================= in-game HUD ================= */
+    #hud { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 5; display: flex; justify-content: space-between;
+      align-items: flex-end; gap: 12px; pointer-events: none; }
+    #hud.hidden { display: none; }
+    .meter { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 200px; }
+    .meter .label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .bar { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); overflow: hidden; margin-bottom: 8px; }
+    .bar:last-child { margin-bottom: 0; }
+    .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #e9e3d4, #fff); transition: width 0.15s; }
+    #prompt { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px; max-width: 520px;
+      font-size: 14px; text-align: center; }
+    #prompt:empty { display: none; }
+    #toast { position: fixed; top: 18%; left: 50%; transform: translateX(-50%); z-index: 6; font-size: 22px; font-weight: 650;
+      text-shadow: 0 2px 12px #000; opacity: 0; transition: opacity 0.35s; pointer-events: none; text-align: center; }
+    #toast.on { opacity: 1; }
+    #reticle { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%;
+      background: rgba(255, 255, 255, 0.55); z-index: 4; pointer-events: none; }
+    #reticle.hidden { display: none; }
+    #rhud .score { font-size: 26px; font-weight: 700; margin: 2px 0 6px; font-variant-numeric: tabular-nums; }
+    @media (max-width: 640px) { #hud { flex-direction: column; align-items: stretch; } .meter { min-width: 0; } }
+  </style>
+</head>
+<body>
+  <div id="overlay">
+    <button id="fullscreen" class="icon" title="Full screen (F)" aria-label="Full screen">&#x26F6;</button>
+    <div class="screen">
+      <div class="left">
+        <header class="brand">
+          <div class="seal" aria-hidden="true">餅</div>
+          <div>
+            <h1>Mochitsuki</h1>
+            <div class="kana" aria-hidden="true">もちつき</div>
+          </div>
+        </header>
+        <p class="tag">Pound steamed rice into mochi under the full Moon: one swings the mallet, one folds the dough.</p>
+
+        <nav class="menu" id="menu" aria-label="Main menu">
+          <button id="start" class="mochi" disabled>Loading…</button>
+          <span id="vr-slot"></span>
+          <button class="mochi goma" data-panel="worlds">Worlds <span class="value" id="v-worlds"></span></button>
+          <button class="mochi sakura" data-panel="players">Players <span class="value" id="v-players"></span></button>
+          <button class="mochi yomogi" data-panel="music" id="menu-music">Music <span class="value" id="v-music"></span></button>
+          <button class="mochi" data-panel="settings">Settings <span class="value" id="v-settings"></span></button>
+          <button class="mochi kinako" data-panel="howto">How to play</button>
+        </nav>
+
+        <div class="status">
+          <div id="sound">Loading sound…</div>
+          <div id="mp-note"></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <!-- the pounding: src/menuScene.js animates it (kine, mochi, the kneader's hand, puffs, grains) -->
+        <svg id="scene" viewBox="0 0 420 380" role="button" tabindex="0" aria-label="Pound the mochi">
+          <defs>
+            <linearGradient id="g-wood" x1="0" x2="1">
+              <stop offset="0" stop-color="#4f2d14" /><stop offset="0.3" stop-color="#8a5831" /><stop offset="0.48" stop-color="#a46d3f" />
+              <stop offset="0.72" stop-color="#7a4b28" /><stop offset="1" stop-color="#43250f" />
+            </linearGradient>
+            <linearGradient id="g-rim" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#9a6638" /><stop offset="1" stop-color="#5a3518" /></linearGradient>
+            <radialGradient id="g-bowl" cx="0.5" cy="0.35" r="0.7"><stop offset="0" stop-color="#3a2210" /><stop offset="1" stop-color="#1c0e05" /></radialGradient>
+            <radialGradient id="g-mochi" cx="0.36" cy="0.3" r="0.85"><stop offset="0" stop-color="#ffffff" /><stop offset="0.55" stop-color="#f6f0e6" /><stop offset="1" stop-color="#dcd0bd" /></radialGradient>
+            <linearGradient id="g-kine" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#d9ab70" /><stop offset="0.55" stop-color="#b07d47" /><stop offset="1" stop-color="#7a5230" /></linearGradient>
+            <linearGradient id="g-kine-h" x1="0" x2="1"><stop offset="0" stop-color="#8a5c34" /><stop offset="0.4" stop-color="#d4a46a" /><stop offset="1" stop-color="#8a5c34" /></linearGradient>
+            <radialGradient id="g-shadow"><stop offset="0" stop-color="rgba(0,0,0,0.55)" /><stop offset="1" stop-color="rgba(0,0,0,0)" /></radialGradient>
+            <radialGradient id="g-hand" cx="0.4" cy="0.35" r="0.8"><stop offset="0" stop-color="#ffe8d4" /><stop offset="1" stop-color="#e2b48e" /></radialGradient>
+          </defs>
+          <ellipse cx="210" cy="352" rx="160" ry="17" fill="url(#g-shadow)" />
+          <!-- the mortar -->
+          <g id="usu">
+            <path d="M92 240 C 84 288, 94 330, 114 347 L 306 347 C 326 330, 336 288, 328 240 Z" fill="url(#g-wood)" />
+            <path d="M126 252 C 120 292, 128 322, 140 344" stroke="rgba(0,0,0,0.16)" stroke-width="2" fill="none" />
+            <path d="M178 256 C 176 296, 180 326, 184 346" stroke="rgba(0,0,0,0.12)" stroke-width="2" fill="none" />
+            <path d="M246 256 C 248 296, 244 326, 238 346" stroke="rgba(255,255,255,0.08)" stroke-width="2" fill="none" />
+            <path d="M296 252 C 302 292, 294 322, 282 344" stroke="rgba(0,0,0,0.16)" stroke-width="2" fill="none" />
+            <path d="M88 266 Q210 284 332 266" stroke="#23170f" stroke-width="8" fill="none" />
+            <path d="M101 326 Q210 343 319 326" stroke="#23170f" stroke-width="8" fill="none" />
+            <ellipse cx="210" cy="240" rx="120" ry="25" fill="url(#g-rim)" />
+            <ellipse cx="210" cy="242" rx="98" ry="17" fill="url(#g-bowl)" />
+          </g>
+          <!-- steam -->
+          <path class="steam" d="M180 196 C 170 180, 192 168, 182 150" />
+          <path class="steam" d="M212 190 C 202 172, 224 162, 214 140" />
+          <path class="steam" d="M242 196 C 232 180, 254 168, 244 150" />
+          <!-- the mochi -->
+          <g id="mochi">
+            <path id="mochi-body" d="M126 242 C 128 214, 168 199, 210 199 C 252 199, 292 214, 294 242 C 268 252, 152 252, 126 242 Z" fill="url(#g-mochi)" />
+            <g id="grains" fill="#e7dcc8">
+              <ellipse cx="160" cy="226" rx="3.2" ry="1.7" transform="rotate(20 160 226)" /><ellipse cx="178" cy="214" rx="3.2" ry="1.7" transform="rotate(-30 178 214)" />
+              <ellipse cx="196" cy="231" rx="3.2" ry="1.7" transform="rotate(60 196 231)" /><ellipse cx="214" cy="212" rx="3.2" ry="1.7" transform="rotate(10 214 212)" />
+              <ellipse cx="232" cy="228" rx="3.2" ry="1.7" transform="rotate(-50 232 228)" /><ellipse cx="250" cy="216" rx="3.2" ry="1.7" transform="rotate(35 250 216)" />
+              <ellipse cx="268" cy="232" rx="3.2" ry="1.7" transform="rotate(-15 268 232)" /><ellipse cx="146" cy="238" rx="3.2" ry="1.7" transform="rotate(70 146 238)" />
+              <ellipse cx="204" cy="244" rx="3.2" ry="1.7" transform="rotate(-70 204 244)" /><ellipse cx="282" cy="240" rx="3.2" ry="1.7" transform="rotate(25 282 240)" />
+              <ellipse cx="188" cy="205" rx="3.2" ry="1.7" transform="rotate(5 188 205)" /><ellipse cx="240" cy="206" rx="3.2" ry="1.7" transform="rotate(-25 240 206)" />
+            </g>
+            <ellipse id="mochi-gloss" cx="182" cy="211" rx="28" ry="7" fill="#ffffff" opacity="0.25" />
+          </g>
+          <!-- the kneader's hand -->
+          <g id="hand">
+            <path d="M40 214 L 104 206 C 122 204, 138 208, 140 216 C 142 224, 128 228, 112 228 L 40 232 Z" fill="url(#g-hand)" />
+            <path d="M104 206 C 116 198, 132 198, 136 204" stroke="#e2b48e" stroke-width="7" stroke-linecap="round" fill="none" />
+            <rect x="20" y="206" width="26" height="32" rx="6" fill="#c8202b" />
+          </g>
+          <!-- the mallet: pivot at the pounder's grip (398, 140) -->
+          <g id="kine">
+            <rect x="214" y="134" width="196" height="12" rx="6" fill="url(#g-kine-h)" />
+            <rect x="372" y="132" width="38" height="16" rx="7" fill="#5a3a22" />
+            <rect x="178" y="96" width="62" height="100" rx="15" fill="url(#g-kine)" />
+            <rect x="176" y="104" width="66" height="7" rx="3.5" fill="#3a2a1c" />
+            <rect x="176" y="181" width="66" height="7" rx="3.5" fill="#3a2a1c" />
+            <rect x="186" y="99" width="10" height="94" rx="5" fill="rgba(255,255,255,0.18)" />
+          </g>
+          <g id="fx"></g>
+          <text id="pettan" x="250" y="96" text-anchor="middle">ぺったん!</text>
+          <text id="done-msg" x="210" y="150" text-anchor="middle">できた!</text>
+        </svg>
+        <div id="hint">Tap the mochi to <b>pound</b> it</div>
+
+        <div class="panels">
+          <section class="panel hidden" id="panel-worlds" aria-label="Worlds">
+            <button class="icon close" data-close aria-label="Close">&#x2715;</button>
+            <h2>Worlds</h2>
+            <p class="lead">Where the mortar stands. Choosing a world reloads the page.</p>
+            <div class="cards" data-cards-for="world"></div>
+            <select id="world" class="hidden" aria-label="World"></select>
+            <div class="note" id="world-note"></div>
+          </section>
+
+          <section class="panel hidden" id="panel-players" aria-label="Players">
+            <button class="icon close" data-close aria-label="Close">&#x2715;</button>
+            <h2>Players</h2>
+            <p class="lead">One headset, or two in the same room: one hosts (holds the mallet and keeps the batch's time), the other joins and kneads with their hands.</p>
+            <div class="cards" data-cards-for="mp-role"></div>
+            <select id="mp-role" class="hidden" aria-label="Players">
+              <option value="solo">Play alone</option>
+              <option value="host">Two headsets: host (pound; runs the dough)</option>
+              <option value="join">Two headsets: join (knead the host's dough)</option>
+            </select>
+          </section>
+
+          <section class="panel hidden" id="panel-music" aria-label="Music">
+            <button class="icon close" data-close aria-label="Close">&#x2715;</button>
+            <h2>Music</h2>
+            <p class="lead">Pound to your own song: its beats are found automatically, and it starts when you enter.</p>
+            <div class="rhythm" id="rhythm-box">
+              <div class="field">
+                <label class="cap" for="song">SONG</label>
+                <select id="song" aria-label="Song"><option value="">No music (free play)</option></select>
+              </div>
+              <div class="field row">
+                <label class="filebtn">Choose a song file…<input type="file" id="songfile" accept="audio/*" hidden /></label>
+              </div>
+              <div class="field">
+                <label class="cap" for="density">STRIKE ON</label>
+                <select id="density" aria-label="Strike on">
+                  <option value="auto">Auto pace</option>
+                  <option value="2">Every other beat</option>
+                  <option value="1">Every beat</option>
+                </select>
+              </div>
+              <div id="rhythm-status">Pick a song and it starts when you enter (on screen or in VR). Its beats are found automatically.</div>
+            </div>
+          </section>
+
+          <section class="panel hidden" id="panel-settings" aria-label="Settings">
+            <button class="icon close" data-close aria-label="Close">&#x2715;</button>
+            <h2>Settings</h2>
+            <p class="lead">Dough quality: finer dough looks and feels better but costs more; on a Quest the richer levels run in slow motion.</p>
+            <div class="cards" data-cards-for="dough-quality"></div>
+            <select id="dough-quality" class="hidden" aria-label="Dough quality"><option value="">Dough: automatic (what this device can run)</option></select>
+            <div class="note" id="dough-quality-note"></div>
+          </section>
+
+          <section class="panel hidden" id="panel-howto" aria-label="How to play">
+            <button class="icon close" data-close aria-label="Close">&#x2715;</button>
+            <h2>How to play</h2>
+            <p class="lead">Steamed rice drops into the mortar and is pounded into mochi: one person swings the heavy mallet; between strikes, someone kneads and folds the dough with their own hands. Choose where the mortar stands under Worlds.</p>
+            <div class="keys">
+              <b>Mouse / WASD</b><span>look and walk (Shift to hurry)</span>
+              <b>E</b><span>take the kine (mallet) at the mortar, or give it back</span>
+              <b>Click / Space</b><span>strike. Wait until hands are out of the bowl</span>
+              <b>VR</b><span>left stick walks, right stick turns. Grip at the mortar takes the kine; swing it down for real</span>
+              <b>VR hands</b><span>put the controllers down to knead the dough with your own hands</span>
+              <b>Esc</b><span>back to this menu</span>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="reticle" class="hidden"></div>
+  <div id="toast"></div>
+  <div id="hud" class="hidden">
+    <div class="meter">
+      <div class="label"><span>Mochi</span><span id="batch">batch 1</span></div>
+      <div class="bar"><i id="progress"></i></div>
+    </div>
+    <div id="prompt"></div>
+    <div id="rhud" class="meter hidden">
+      <div class="label"><span>Score</span><span id="rmult">×1</span></div>
+      <div class="score" id="rscore">0</div>
+      <div class="label"><span id="rcombo">combo 0</span><span id="rcal"></span></div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+  <script type="module" src="/src/menu.js"></script>
+</body>
+</html>

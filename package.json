@@ -1,0 +1,20 @@
+{
+  "name": "mochi-pounding",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Mochitsuki: an immersive three.js mochi-pounding courtyard with Satie spatial sound (desktop + WebXR).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "contract": "node scripts/write-contract.mjs"
+  },
+  "dependencies": {
+    "satie-runtime": "https://www.satie.world/runtime/0.4.8/satie-runtime.tgz",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "vite": "8.3.5"
+  }
+}
