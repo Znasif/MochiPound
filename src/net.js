@@ -18,14 +18,22 @@ export function roleFromUrl() {
 export function createNet(role) {
   const hot = import.meta.hot;
   const id = Math.random().toString(36).slice(2, 10);
-  const listeners = {};
+  const listeners = {}, taps = [];
   const peers = new Map(); // id -> { role, seen (ms) }
   const on = role !== 'solo' && !!hot;
+  let muted = false;
   const net = {
     role, id,
     available: !!hot,
-    send(type, data) { if (on) hot.send('mp:send', { from: id, role, type, data }); },
+    // every message carries its sender's clock (`at`, performance.now() ms): the film camera (src/film/) puts
+    // each one at the moment it was captured, not when it arrived
+    send(type, data) { if (on) hot.send('mp:send', { from: id, role, type, data, at: performance.now() }); },
     on(type, fn) { (listeners[type] ??= []).push(fn); },
+    // every incoming message, before its listeners (the film recorder)
+    tap(fn) { taps.push(fn); },
+    // muted: incoming messages reach no listener (the film camera while it renders a take offline)
+    set muted(v) { muted = !!v; },
+    get muted() { return muted; },
     // a peer with that role heard from in the last 2.5 s
     has(peerRole) {
       const now = performance.now();
@@ -45,6 +53,10 @@ export function createNet(role) {
       const was = net.has(m.role);
       peers.set(m.from, { role: m.role, seen: performance.now() });
       if (!was) console.info(`[mp] ${m.role === 'host' ? 'host' : m.role === 'join' ? 'guest' : m.role === 'watch' ? 'film camera' : m.role} connected`);
+      // clock sync for the film camera: answered on every page, muted or not
+      if (m.type === 'clock-ping') { net.send('clock-pong', { to: m.from, t0: m.data?.t0, t1: performance.now() }); return; }
+      for (const fn of taps) fn(m.type, m.data, m);
+      if (muted) return;
       for (const fn of listeners[m.type] ?? []) fn(m.data, m);
     });
     setInterval(() => net.send('hello', {}), 1000);

@@ -33,7 +33,8 @@ Wait for the kneader's hands to leave the bowl between strikes. 22 strikes turn 
 Two small, translucent bars sit behind the mortar while you pound:
 
 - **Elasticity.** Fresh rice starts very stiff and softens only through rhythm, for both players. Each player keeps their own score as usual. Every turn, meaning one strike and the knead after it, adds the average of the two players' points to the elasticity: **Perfect** +5%, **Good** +1%, **Bad** (a miss) −3%. Two perfect players make it fully elastic in 20 turns; two bad ones stiffen it again. A turn needs both judgments, so pounding alone, kneading alone, or free play without a song changes nothing. Only one material value changes, the dough's stiffness (Young's modulus), from 8 kPa down to 1.2 kPa.
-- **Moisture.** It only sets the dough's colour: white when watered, browning as it dries. It falls about 1% a second, and each dip of a hand in the water bucket adds 10%.
+- **Moisture.** It sets the dough's colour: white when watered, browning as it dries. It falls about 1% a second, and each dip of a hand in the water bucket adds 10%.
+- **Done.** The mochi flies to the Earth only when elasticity **and** moisture are both above 95%, never just one; the number of strikes doesn't end the batch.
 - **Hitting a hand.** If the mallet hits a hand in the bowl, you lose 500 points and your combo (at most once every 5 s, however long the mallet stays on the hand). A red light flashes at the mortar, and the controllers on both headsets vibrate hard. Bare tracked hands have no vibration.
 
 VR defaults to **Thumbsticks + physical movement** in Settings, with stick walking, snap turning and automatic role placement. Physical walking, leaning and crouching also work. Choose **Room scale** to start beside the mortar once (host/solo at the pounding side, guest at the kneading side), using the headset's tracked floor and height, then preserve your position when picking up a mallet or switching to hand tracking. Your chosen mode is remembered. Each headset has its own play area; their real rooms are not aligned together.
@@ -85,10 +86,15 @@ Click **Enter**, then click the view to look around.
 | 1–5 | glide to a preset shot: wide, over the pounder, kneader side, top down, sky (Shift + number cuts straight to it) |
 | O, T | orbit the mortar, then the host, then the guest; T turns slowly around it (turntable) |
 | G | cinematic (heavier) smoothing |
-| R | record the 3D view, without any page UI, to a `.webm` download (video only: for sound, record with OBS or Win+Alt+R) |
+| R | start / stop recording a take |
+| Enter, Backspace, Esc | render the take to a video; discard it; cancel a render |
 | H, P | hide the help; print the current shot to the console |
 
-A recording has the browser window's size (up to 2× on high-DPI screens). The story intro also plays on the camera; Space skips it.
+**Takes give latency-free video.** The live view reaches the laptop over the network, late and unevenly, so it is only for framing shots. A take records instead:
+- every pose, hand, mallet and dough sample at the moment it was captured on its headset, using clocks synced to each headset;
+- your camera path.
+
+While a take records, the headsets send poses at 60 per second and the dough at 30. Press **Enter** afterwards to render it offline: frame by frame at exactly 60 fps, 1920×1080, with every player, hand, the mallet, the dough and the camera exactly where they were at that instant. Nothing is eased, and nothing waits for the network. Rendering runs slower than real time; the progress shows, and the `.webm` (VP9) downloads when done. The video has no sound, so add the song in an editor. It needs Chrome or Edge (WebCodecs). The story intro also plays on the camera; Space skips it.
 
 ## Sound
 

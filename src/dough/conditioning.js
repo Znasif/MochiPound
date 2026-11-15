@@ -7,13 +7,17 @@
 // A turn counts once both its strike and its knead have been judged; one without its partner (one person
 // playing alone, or free play with no song) changes nothing.
 //
-// Moisture is only the dough's colour now (more water, whiter; less, browner). It dries steadily and each dip
-// in the water bucket adds 10%. It no longer touches elasticity.
+// Moisture is the dough's colour (more water, whiter; less, browner). It dries steadily and each dip in the
+// water bucket adds 10%. It doesn't touch elasticity.
+//
+// The batch is done when elasticity AND moisture are both above 95% (`ready`); the strike count doesn't end it.
 export const CONDITIONING = Object.freeze({
   stiffE: 8000, softE: 1200,
   initialMoisture: 0.7, dryingPerSecond: 0.012, waterPerDip: 0.1,
   points: Object.freeze({ perfect: 5, good: 1, miss: -3 }), // elasticity % per judgment; a turn adds its pair's average
   turnsKept: 64, // turns waiting for their partner judgment (a solo player's never arrive)
+  // the batch is done (the mochi flies to the Earth) when both are above these: elasticity AND moisture
+  doneElasticity: 0.95, doneMoisture: 0.95,
 });
 const clamp = (x) => Math.max(0, Math.min(1, x));
 export const youngsModulusFor = (elasticity) => CONDITIONING.stiffE
@@ -27,6 +31,9 @@ export function createConditioning() {
     snapshot: () => ({ epoch, revision, elasticity, moisture }),
     get youngsModulus() { return youngsModulusFor(elasticity); },
     get waiting() { return turns.size; },
+    // both above their marks (strictly: more than 95%), never just one
+    // (a hair of tolerance: turns move it by whole percents, and 19 of 5% sum to 0.9500000000000002 in floats)
+    get ready() { return elasticity > CONDITIONING.doneElasticity + 1e-9 && moisture > CONDITIONING.doneMoisture + 1e-9; },
     reset() { epoch++; revision = 0; elasticity = 0; moisture = CONDITIONING.initialMoisture; judged.clear(); turns.clear(); },
     update(dt) {
       if (!(dt > 0) || !Number.isFinite(dt)) return;

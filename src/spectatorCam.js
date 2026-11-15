@@ -9,8 +9,11 @@ import * as THREE from 'three';
 //   Z / X            zoom in / out                           G                cinematic smoothing on/off
 //   1-5              glide to a preset shot (Shift: cut)     O                orbit: mortar, host, guest, off
 //   T                slow turntable while orbiting           H                hide/show this help
-//   R                record the canvas to a .webm (video only, no page UI; use OBS for sound)
+//   R                record a take / stop                    Enter            render the take to a video
+//   Backspace        discard the take                        Esc              cancel a render
 //   P                print the current shot to the console
+// A take (src/film/) records the world as it was captured on each headset, and this camera's path; its render
+// is made offline at an exact 60 fps, so it has no network lag, easing or dropped frames (takes: main.js).
 
 // preset shots around the station at the origin (the pounder stands at +Z, the kneader at -X)
 const SHOTS = [
@@ -23,7 +26,7 @@ const SHOTS = [
 const SMOOTH = { normal: { look: 0.05, move: 0.12, glide: 1.4 }, cinematic: { look: 0.35, move: 0.6, glide: 3 } };
 const MOUSE = 0.0018, ARROW = 0.5; // rad per pixel, rad/s
 
-export function createSpectatorCam({ camera, dom, scene, targets = {} }) {
+export function createSpectatorCam({ camera, dom, scene, targets = {}, takes = null }) {
   scene.add(camera); // off the player's rig: this camera is its own
   camera.rotation.order = 'YXZ';
   const pos = new THREE.Vector3(...SHOTS[0].pos), vel = new THREE.Vector3(), wish = new THREE.Vector3();
@@ -77,47 +80,26 @@ export function createSpectatorCam({ camera, dom, scene, targets = {} }) {
     }
   }
 
-  // ---------- recording: the canvas only (no page UI), as WebM ----------
-  let recorder = null, chunks = [];
-  function toggleRecording() {
-    if (recorder) { recorder.stop(); return; }
-    const stream = dom.captureStream?.(60);
-    if (!stream || typeof MediaRecorder === 'undefined') { status('recording is not supported in this browser'); return; }
-    const type = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find((t) => MediaRecorder.isTypeSupported(t));
-    try { recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 16e6 }); }
-    catch (err) { status(`could not record: ${err.message}`); return; }
-    chunks = [];
-    recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-    recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `mochi-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.webm`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-      status(`saved ${a.download} (${(blob.size / 1e6).toFixed(1)} MB)`);
-      recorder = null; rec.style.display = 'none';
-    };
-    recorder.start(1000);
-    rec.style.display = 'block';
-    status(`recording ${dom.width}x${dom.height}: R to stop`);
-  }
-
   // ---------- help and status (page UI: never in the recording) ----------
   const help = document.createElement('div');
   help.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:20;max-width:min(420px,calc(100vw - 24px));padding:10px 12px;border-radius:10px;background:rgba(10,14,22,0.72);color:#f3ead8;font:12px/1.5 system-ui,sans-serif;pointer-events:none;white-space:pre-wrap';
   const rec = document.createElement('div');
-  rec.textContent = '● REC';
+  rec.textContent = '●';
   rec.style.cssText = 'position:fixed;top:12px;right:14px;z-index:20;display:none;color:#ff4d4d;font:700 14px system-ui,sans-serif;text-shadow:0 0 4px #000;pointer-events:none';
   document.body.append(help, rec);
   help.style.display = 'none';
   let note = '', noteFor = 0, helpOn = true, helpAt = 0;
   const status = (text) => { note = text; noteFor = 3; drawHelp(); };
   function drawHelp() {
+    const take = takes?.status ?? '';
     help.textContent = `FILM CAMERA · ${orbit ? `orbit ${orbit.target === 'join' ? 'guest' : orbit.target}${turntable ? ' · turntable' : ''}` : 'free'} · speed ${speed.toFixed(1)} m/s · ${Math.round(fovS)}° · ${smooth}\n`
       + 'click: mouse look · WASD fly · E/Q up/down · Shift fast · wheel speed · Z/X zoom\n'
-      + '1-5 shots (Shift: cut) · O orbit · T turntable · G smoothing · R record · H hide'
-      + (note && noteFor > 0 ? `\n${note}` : '');
+      + '1-5 shots (Shift: cut) · O orbit · T turntable · G smoothing · R record a take · H hide'
+      + (take ? `\n${take}` : '') + (note && noteFor > 0 ? `\n${note}` : '');
+    // the corner mark: recording or rendering, also with the help hidden
+    const busy = takes?.busy;
+    rec.style.display = busy ? 'block' : 'none';
+    if (busy) rec.textContent = take.startsWith('●') ? `● REC ${take.match(/([\d.]+) s/)?.[1] ?? ''} s` : take.split(' · ')[0];
   }
 
   addEventListener('keydown', (e) => {
@@ -130,7 +112,10 @@ export function createSpectatorCam({ camera, dom, scene, targets = {} }) {
     else if (e.code === 'KeyT') { turntable = !turntable; status(turntable ? 'turntable on (in orbit)' : 'turntable off'); }
     else if (e.code === 'KeyG') { smooth = smooth === 'normal' ? 'cinematic' : 'normal'; status(`${smooth} smoothing`); }
     else if (e.code === 'KeyH') { helpOn = !helpOn; help.style.display = helpOn ? 'block' : 'none'; }
-    else if (e.code === 'KeyR') toggleRecording();
+    else if (e.code === 'KeyR') { takes?.toggle(); drawHelp(); }
+    else if (e.code === 'Enter' && takes) { takes.render(); drawHelp(); }
+    else if (e.code === 'Backspace' && takes) { takes.discard(); drawHelp(); e.preventDefault(); }
+    else if (e.code === 'Escape' && takes?.busy) takes.cancel();
     else if (e.code === 'KeyP') {
       const look = tmp.set(0, 0, -1).applyQuaternion(camera.quaternion).add(pos);
       console.info(`[film] shot { pos: [${pos.toArray().map((v) => v.toFixed(2))}], look: [${look.toArray().map((v) => v.toFixed(2))}] }, fov ${Math.round(fovS)}`);
@@ -162,7 +147,8 @@ export function createSpectatorCam({ camera, dom, scene, targets = {} }) {
   const ease = (dt, tau) => 1 - Math.exp(-dt / Math.max(1e-3, tau));
   return {
     get head() { return pos; },
-    get recording() { return !!recorder; },
+    // redraw the help and status (a render runs with this page's loop stopped)
+    refresh() { drawHelp(); },
     enable() {
       active = true;
       help.style.display = helpOn ? 'block' : 'none';

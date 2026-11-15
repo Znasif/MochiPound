@@ -65,6 +65,28 @@ test('moisture is only colour now: it dries, a dip adds 10%, and elasticity igno
   assert.equal(s.snapshot().moisture, 1, 'never above full');
 });
 
+test('the batch is done only when elasticity AND moisture are both above 95%', () => {
+  const s = createConditioning();
+  for (let i = 0; i < 19; i++) turn(s, `p${i}`, 'perfect', 'perfect');
+  assert.equal(pct(s), 95);
+  for (let i = 0; i < 5; i++) s.water();
+  assert.equal(s.snapshot().moisture, 1);
+  assert.equal(s.ready, false, 'elasticity at exactly 95% is not more than 95%');
+  turn(s, 'last', 'good', 'good');
+  assert.equal(s.ready, true, 'elastic (96%) and moist (100%)');
+  s.update(5); // dries to 94%
+  assert.ok(s.snapshot().moisture < 0.95);
+  assert.equal(s.ready, false, 'elastic but not moist enough: not done');
+  s.water();
+  assert.equal(s.ready, true, 'topped up again');
+  const dry = createConditioning();
+  for (let i = 0; i < 30; i++) turn(dry, `d${i}`, 'perfect', 'perfect');
+  assert.equal(dry.ready, false, 'fully elastic but at 70% moisture: not done');
+  const wet = createConditioning();
+  for (let i = 0; i < 5; i++) wet.water();
+  assert.equal(wet.ready, false, 'fully moist but stiff: not done');
+});
+
 test('a follower takes only newer host state', () => {
   const host = createConditioning(), guest = createConditioning();
   turn(host, 'a', 'perfect', 'good'); host.update(0.1);

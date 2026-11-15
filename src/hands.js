@@ -271,6 +271,7 @@ export function createHands(renderer, rig, scene, controllers = [], { remoteSets
 
   return {
     hands: all,
+    exact: false, // the other people's hands placed exactly as given, not eased (src/film/ playback)
     // all tracked joints as spheres, and all bones as dough colliders (this headset's and the other's)
     spheres: [],
     tools: [],
@@ -300,7 +301,7 @@ export function createHands(renderer, rig, scene, controllers = [], { remoteSets
       }
       // the other headset's hands arrive ~45 times a second, unevenly: each joint eases toward its latest
       // position every frame, so the hand glides (and pushes the dough smoothly) instead of stepping
-      const ease = 1 - Math.exp(-dt * 25);
+      const ease = this.exact ? 1 : 1 - Math.exp(-dt * 25); // exact: a film playback, already on time
       for (const h of remote) {
         if (clock - h.seen > REMOTE_TIMEOUT) { if (h.tracked) lose(h); continue; }
         h.tracked = true;

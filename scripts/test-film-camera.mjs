@@ -130,7 +130,9 @@ test('the free camera glides to shots, flies, orbits and zooms', () => {
   try {
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.05, 400);
     const hostHead = new THREE.Vector3(0, 1.6, 1.12);
-    const cam = createSpectatorCam({ camera, scene, dom: { addEventListener() {}, width: 1280, height: 720 }, targets: { host: () => hostHead, join: () => null } });
+    const calls = [];
+    const takes = { status: '', busy: false, toggle() { calls.push('toggle'); }, render() { calls.push('render'); }, discard() { calls.push('discard'); }, cancel() { calls.push('cancel'); } };
+    const cam = createSpectatorCam({ camera, scene, takes, dom: { addEventListener() {}, width: 1280, height: 720 }, targets: { host: () => hostHead, join: () => null } });
     const run = (s) => { for (let i = 0; i < Math.round(s * 60); i++) cam.update(1 / 60); camera.updateMatrixWorld(true); };
     const looksAt = (p) => new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).dot(p.clone().sub(camera.position).normalize());
     cam.enable(); run(0.1);
@@ -167,8 +169,10 @@ test('the free camera glides to shots, flies, orbits and zooms', () => {
     const fov = camera.fov;
     key('keydown', 'KeyZ'); run(1); key('keyup', 'KeyZ'); run(1);
     assert.ok(camera.fov < fov - 10, 'Z zooms in');
-    key('keydown', 'KeyR'); // no MediaRecorder in Node: says so, doesn't throw
-    assert.equal(cam.recording, false);
+    key('keydown', 'KeyR'); key('keydown', 'Enter'); key('keydown', 'Backspace');
+    assert.deepEqual(calls, ['toggle', 'render', 'discard'], 'R records a take, Enter renders it, Backspace discards it');
+    key('keydown', 'Escape'); assert.equal(calls.length, 3, 'Esc cancels only a running render');
+    takes.busy = true; key('keydown', 'Escape'); assert.equal(calls.at(-1), 'cancel');
   } finally {
     if (saved.document === undefined) delete globalThis.document; else globalThis.document = saved.document;
     if (saved.add === undefined) delete globalThis.addEventListener; else globalThis.addEventListener = saved.add;

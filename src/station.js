@@ -13,9 +13,10 @@ import { createConditioning } from './dough/conditioning.js';
 //
 // A batch: fresh rice appears above the mortar and drops into it (rice_drop). Then whoever holds the kine
 // strikes (pound) and a real person kneads between strikes with their tracked hands (src/hands.js): a palm
-// slapping into the dough is a fold (turn), a hand in the bucket wets it (dip). After
-// POUNDING.strikesPerBatch strikes the dough is smooth mochi (batch_done); it rises out of the mortar and
-// floats away toward the Moon, and the next batch starts.
+// slapping into the dough is a fold (turn), a hand in the bucket wets it (dip). The batch is done (batch_done)
+// when its elasticity AND its moisture are both above 95% (src/dough/conditioning.js `ready`, the user's rule):
+// the mochi rises out of the mortar and flies to the Earth (or floats away), and the next batch starts. The
+// strike count (POUNDING.strikesPerBatch) still sets `progress`, the look of the dough and the garden.
 //
 // Who swings the kine: the desktop player (click / Space), the VR player (a real downward swing of the
 // controller), or the other headset (multiplayer, mode 'remote'). Nobody holding it is mode 'idle': it
@@ -82,6 +83,7 @@ export function createStation(scene) {
   mochi.visible = false;
 
   const remoteQ = new THREE.Quaternion();
+  let remoteExact = false;
   // the simulated dough (MPM, in a worker) inside the mortar's carved bowl
   // (its mortar is the exact one drawn above, read back from the meshes, as the mallet's collision is)
   const dough = createDough(scene, { usu: usuShape(usu), map: riceMat.map });
@@ -326,7 +328,6 @@ export function createStation(scene) {
       const [lo, hi] = L.POUNDING.goodIntervalS;
       emit('rhythm', { good: !rushed && interval >= lo && interval <= hi, rushed, interval });
     }
-    if (st.progress >= 1 && !follower) { st.phase = 'done'; st.t = 0; st.step = 0; emit('batch_done'); emit('phase', 'done'); }
   }
 
   // ---------- the kneading hands: in the bowl, slapping the dough, dipping in the bucket ----------
@@ -370,7 +371,12 @@ export function createStation(scene) {
     if (st.phase === 'load') updateLoad(dt);
     else if (st.phase === 'pound') updatePound(dt);
     else if (st.phase === 'done') updateDone(dt);
-    if (!follower && !storyBlocked && st.phase === 'pound') { conditioning.update(dt); applyMaterialState(); }
+    if (!follower && !storyBlocked && st.phase === 'pound') {
+      conditioning.update(dt); applyMaterialState();
+      // done (the mochi flies to the Earth) only when the dough is both elastic AND moist enough (the user's
+      // rule, 2026-11-15), whatever the strike count; the guest follows the host's phase
+      if (conditioning.ready) { st.phase = 'done'; st.t = 0; st.step = 0; emit('batch_done'); emit('phase', 'done'); }
+    }
 
     // the kine against the mortar, the ground and the tracked hands' joints; in VR it starts from where
     // the controller holds it each frame, so a blocked swing springs back to the hand once clear
@@ -381,7 +387,7 @@ export function createStation(scene) {
       // eased toward the latest pose from the network (~45 a second, uneven), so it glides instead of stepping
       tmp.fromArray(st.remoteKine, 0); remoteQ.fromArray(st.remoteKine, 3);
       if (!st._remoteEased) { kine.position.copy(tmp); kine.quaternion.copy(remoteQ); st._remoteEased = true; }
-      else { const a = 1 - Math.exp(-dt * 25); kine.position.lerp(tmp, a); kine.quaternion.slerp(remoteQ, a); }
+      else { const a = remoteExact ? 1 : 1 - Math.exp(-dt * 25); kine.position.lerp(tmp, a); kine.quaternion.slerp(remoteQ, a); }
     }
     const knock = kineContact.resolve(kine, hands ? hands.spheres : [], dt);
     if (knock) { if (knock.kind === 'hand') reportHandHit(); emit('kine_contact', knock); }
@@ -621,6 +627,8 @@ export function createStation(scene) {
     followPhase(phase) { if (phase !== hostPhase) { hostPhase = phase; hostPhaseAt = st.clock; } },
     // the kine held in the other headset's hand (its pose, or null), and where this headset holds it (to send)
     setRemoteKine(pose) { st.remoteKine = pose; if (!pose) st._remoteEased = false; },
+    // exact: the remote kine is placed where its pose says, not eased (a film playback, already on time)
+    setRemoteExact(v) { remoteExact = !!v; },
     heldKineTarget() {
       if (st.mode === 'desktop') { kine.updateMatrixWorld(true); const p = kine.getWorldPosition(new THREE.Vector3()), q = kine.getWorldQuaternion(new THREE.Quaternion()); return [...p.toArray(), ...q.toArray()].map(r4); }
       if (!st.vr.grip) return null;

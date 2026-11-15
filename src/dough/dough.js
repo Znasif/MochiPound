@@ -42,6 +42,8 @@ export function createDough(scene, { usu, map }) {
   const prev = new Map();
   const fresh = new Set(); // tool ids that (re)appeared since the last step sent
   let wantSnap = false, onSnapshot = null, followTier = false; // multiplayer (requestSnapshot, applySnapshot)
+  // film playback (src/film/render.js): no simulation; each frame's dough is a recorded snapshot (showSnapshot)
+  let playback = false, shown = null, showLook = null;
   const stats = { count: 0, topY: null, centroid: new THREE.Vector3(), meanVy: 0, maxSpeed: 0, stepMs: 0, time: 0, fresh: 0, tier: '', cohesion: 0 };
   let perfLog = 0;
 
@@ -105,17 +107,22 @@ export function createDough(scene, { usu, map }) {
     busy = false;
     if (d.snap) onSnapshot?.({ tier: stats.tier, N: d.snap.N, x: new Int16Array(d.snap.x), v: new Int16Array(d.snap.v) });
     const s = d.stats;
-    if (!mc || d.field.length !== mc.field.length || s.stale) { spare = mc ? new Float32Array(mc.field.length) : null; return; }
+    if (!mc || d.field.length !== mc.field.length || s.stale) {
+      spare = mc ? new Float32Array(mc.field.length) : null;
+      if (shown) { const done = shown; shown = null; done(false); } // a playback frame from before a tier change
+      return;
+    }
     const old = mc.field;
     mc.field = d.field; // ping-pong: the old grid goes back to the worker on the next step
     spare = old;
     stats.count = s.count; stats.topY = s.topY; stats.meanVy = s.meanVy ?? 0; stats.maxSpeed = s.maxSpeed ?? 0;
     stats.stepMs = s.stepMs; stats.time = s.time ?? 0; stats.fresh++;
-    if (s.count) setLook(s.cohesion);
+    if (s.count) setLook(showLook ?? s.cohesion); // a played-back snapshot carries its host's look
     if (s.count) stats.centroid.set(s.cx, s.cy, s.cz);
     if (s.count && s.simDt > 0) load += 0.1 * (s.stepMs / (s.simDt * 1000) - load);
     if (s.count && s.substeps) { const c = s.stepMs / (s.substeps * s.count); cost = cost ? cost + 0.1 * (c - cost) : c; }
     drawField(s.count);
+    if (shown) { const done = shown; shown = null; done(true); }
     if (s.count && (perfLog += 1) % 300 === 0) {
       console.info(`[dough] ${s.count} particles (${stats.tier}), step ${s.stepMs.toFixed(1)} ms for ${(s.simDt * 1000).toFixed(1)} ms simulated, load ${load.toFixed(2)}`);
     }
@@ -132,6 +139,7 @@ export function createDough(scene, { usu, map }) {
     get mesh() { return mc; },
     stats,
     spawn(center, radius, velocity = [0, 0, 0]) {
+      if (playback) return; // played back: the recorded dough arrives as snapshots
       if (!ready) { pendingSpawn = [center.clone(), radius, velocity]; return; }
       worker.postMessage({ type: 'spawn', center: [center.x, center.y, center.z], radius, velocity });
       stats.count = Math.max(stats.count, 1);
@@ -181,7 +189,29 @@ export function createDough(scene, { usu, map }) {
     // 0 (dry: brown) .. 1 (watered: white); colour only
     setMoisture(m) { if (Number.isFinite(m)) tint.value.copy(DRY).lerp(WATERED, Math.min(1, Math.max(0, m))); },
     // tools: [{ id, kind: 'sphere' | 'cylinder', center: Vector3, quat: Quaternion, r, h, tack (0 slides off, 1 sticks), mould (1: a hand, see mpm-core mouldYield) }]
+    get playback() { return playback; },
+    set playback(v) { playback = !!v; acc = 0; showLook = null; },
+    // draw this recorded snapshot { tier, N, x, v (Int16), coh } exactly; resolves once it is drawn
+    showSnapshot(snap) {
+      if (!snap) return Promise.resolve(false);
+      followTier = true;
+      const want = TIERS.findIndex((t) => t.name === snap.tier);
+      if (want >= 0 && want !== tierIndex) applyTier(want, 'film playback');
+      if (!ready) return Promise.resolve(false);
+      return new Promise((resolve) => {
+        const send = () => {
+          if (busy || !spare) { setTimeout(send, 1); return; } // the previous field is still out
+          showLook = Number.isFinite(snap.coh) ? snap.coh : null;
+          shown = resolve;
+          const x = snap.N ? snap.x.slice() : new Int16Array(0), v = snap.N ? snap.v.slice() : new Int16Array(0);
+          worker.postMessage({ type: 'show', N: snap.N, x: x.buffer, v: v.buffer, field: spare, axis: { x: usu.x, z: usu.z, r: 0.1 } }, [spare.buffer, x.buffer, v.buffer]);
+          spare = null; busy = true;
+        };
+        send();
+      });
+    },
     update(dt, tools, progress) {
+      if (playback) return; // a film playback draws recorded snapshots instead (showSnapshot)
       acc += dt;
       for (const t of tools) if (t.reset) fresh.add(t.id); // kept until a step actually goes out
       if (!ready || busy || !spare) return;

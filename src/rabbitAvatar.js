@@ -83,7 +83,7 @@ export function createRabbitAvatar(scene, { variant = 'indigo', hands, slotBase 
   const foot = new THREE.Vector3(), kinePosition = new THREE.Vector3();
   const previous = new THREE.Vector3(), velocity = new THREE.Vector3(), travel = new THREE.Vector3();
   const moveDirection = new THREE.Vector3(0, 0, -1), pawQ = new THREE.Quaternion(), footQ = new THREE.Quaternion();
-  let heldKine = null, effectors = {};
+  let heldKine = null, effectors = {}, exact = false;
 
   const ready = load(variant).then((loaded) => {
     model = loaded; removeAuthoredRabbitHands(model); visual.add(model);
@@ -118,6 +118,8 @@ export function createRabbitAvatar(scene, { variant = 'indigo', hands, slotBase 
   return {
     object3d: root, ready,
     get headPosition() { return root.visible ? position : null; },
+    get exact() { return exact; },
+    set exact(v) { exact = !!v; },
     get walking() { return walkBlend > 0.1; },
     set(pose, now, kine = null, inputs = {}) {
       if (!pose || pose.length < 7 || !pose.every(Number.isFinite)) return;
@@ -146,7 +148,7 @@ export function createRabbitAvatar(scene, { variant = 'indigo', hands, slotBase 
         }
       }
       if (!root.visible) return;
-      const blend = 1 - Math.exp(-dt * 20);
+      const blend = exact ? 1 : 1 - Math.exp(-dt * 20); // exact: a film playback, already smooth and on time
       previous.copy(position);
       position.lerp(targetP, blend); orientation.slerp(targetQ, blend);
       travel.subVectors(position, previous).setY(0);

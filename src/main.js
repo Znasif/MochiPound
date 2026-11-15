@@ -10,6 +10,8 @@ import { TIERS, particlesFor } from './dough/mpm-core.js';
 import { createNet, roleFromUrl } from './net.js';
 import { createHostSync, createGuestSync, createWatchSync } from './sync.js';
 import { createSpectatorCam } from './spectatorCam.js';
+import { createPeerClocks, createRecorder } from './film/recorder.js';
+import { renderTake, download } from './film/render.js';
 import { loadAudio } from './audio.js';
 import { createAudioPlayback } from './audioPlayback.js';
 import { createMusic } from './rhythm/music.js';
@@ -97,7 +99,39 @@ const sync = mpRole === 'host' ? createHostSync({ net, station, hands, camera, s
   : mpRole === 'join' ? createGuestSync({ net, station, hands, camera, scene, controllers: player.controllers })
     : mpRole === 'watch' ? createWatchSync({ net, station, hands, scene }) : null;
 const guest = mpRole === 'join', watch = mpRole === 'watch';
-const film = watch ? createSpectatorCam({ camera, dom: renderer.domElement, scene,
+// the film camera's takes (src/film/): R records one (every world message at the moment it was captured, and
+// this camera's path), Enter renders it offline at an exact 60 fps into a video file, Esc cancels a render
+const recorder = watch ? createRecorder({ net, clocks: createPeerClocks(net), decodeHands: sync.decodeHands, unpackDough: sync.unpackDough }) : null;
+const takes = watch ? (() => {
+  let take = null, rendering = null, progress = null, note = '';
+  const secs = (t) => ((t.t1 - t.t0) / 1000).toFixed(1);
+  return {
+    get status() {
+      if (recorder.recording) return `● recording a take · ${recorder.seconds.toFixed(1)} s · R stops`;
+      if (rendering) return progress ? `rendering ${progress.frame}/${progress.total} frames (${Math.round(100 * progress.frame / progress.total)}%) · ${progress.rate.toFixed(1)} fps · Esc cancels` : 'rendering…';
+      if (take) return `take ready (${secs(take)} s): Enter renders a 1920x1080 60 fps video · Backspace discards${note ? ` · ${note}` : ''}`;
+      return note;
+    },
+    get busy() { return recorder.recording || !!rendering; },
+    toggle() {
+      if (rendering) return;
+      if (recorder.recording) { take = recorder.stop(); note = ''; console.info(`[film] take: ${secs(take)} s, ${take.events.length} messages, ${take.camera.length} camera frames`); }
+      else { take = null; note = ''; recorder.start(); }
+    },
+    render() {
+      if (!take || rendering || recorder.recording) return;
+      const abort = new AbortController(), name = `mochi-take-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.webm`;
+      rendering = abort; progress = null;
+      renderTake(take, filmDeps, { signal: abort.signal, onProgress: (p) => { progress = p; film.refresh(); } })
+        .then((r) => { download(r.blob, name); note = `saved ${name} (${(r.blob.size / 1e6).toFixed(0)} MB, ${r.frames} frames in ${r.seconds.toFixed(0)} s)`; console.info(`[film] ${note}`); })
+        .catch((err) => { note = err.name === 'AbortError' ? 'render cancelled' : `render failed: ${err.message}`; console.warn('[film] render', err); })
+        .finally(() => { rendering = null; progress = null; film.refresh(); });
+    },
+    cancel() { rendering?.abort(); },
+    discard() { if (!rendering && !recorder.recording) { take = null; note = 'take discarded'; } },
+  };
+})() : null;
+const film = watch ? createSpectatorCam({ camera, dom: renderer.domElement, scene, takes,
   targets: { host: () => sync.head('host'), join: () => sync.head('join') } }) : null;
 
 // ---------- UI ----------
@@ -569,16 +603,17 @@ if (guest || watch) {
 }
 let handsGoneFor = Infinity; // s since hands were last tracked (VR)
 let shownProgress = 0; // the world's progress effects (the Moon garden's) ease toward the batch's (the Moon wanes over a few s when a new batch starts)
-renderer.setAnimationLoop((time) => {
-  timer.update(time);
-  const dt = Math.min(timer.getDelta(), 0.05);
+// one frame of the world. live: the real-time loop; false: the film camera rendering a take offline
+// (src/film/render.js), which places the people, the dough and the camera itself, skips the live-only parts
+// (XR placement, the music clock, the camera's keys, audio, the HUD) and renders the frame itself
+function frame(dt, live = true) {
   elapsed += dt;
   const xr = renderer.xr.isPresenting;
-  player.updateXRPlacement();
+  if (live) player.updateXRPlacement();
 
   shownProgress += (station.progress - shownProgress) * (1 - Math.exp(-dt * 1.2));
   world.setProgress?.(shownProgress);
-  world.update(dt, elapsed, film ? film.head : player.head);
+  world.update(dt, elapsed, film ? camera.position : player.head); // the film camera's own, live or played back
   story?.update?.(dt, elapsed);
   hands.update(dt);
   // whenever hands appear (after at least a second without them: a switch from controllers, not a tracking
@@ -606,15 +641,16 @@ renderer.setAnimationLoop((time) => {
   }
   station.update(dt, elapsed);
   sync?.update(dt);
-  musicSync?.update();
+  if (live) musicSync?.update();
   if (xr) station.updateVR(dt);
   rhythm.update(dt);
   doughMeters.update(player.enabled && !story?.blocked);
 
   doughSteam.intensity = Math.max(0, doughSteam.intensity - dt * 0.03);
 
-  if (film) film.update(dt); else player.update(dt);
+  if (film) { if (live) { film.update(dt); recorder.camera(camera); } } else player.update(dt);
   steam.update(dt);
+  if (!live) return;
 
   audio?.update(camera);
   ambience?.update(dt, {
@@ -670,8 +706,21 @@ renderer.setAnimationLoop((time) => {
       : `running ${qualityShown} (picked for this device)`;
   }
 
+}
+function loop(time) {
+  timer.update(time);
+  frame(Math.min(timer.getDelta(), 0.05));
   renderer.render(scene, camera);
-});
+}
+renderer.setAnimationLoop(loop);
+// what the film camera's offline render (src/film/render.js) drives: this page's world, frame by frame
+const filmDeps = watch ? {
+  renderer, scene, camera, station, sync, net,
+  frame: (dt) => frame(dt, false),
+  // the live loop and the live music stop while a take renders; they pick up again from the network after
+  pause() { renderer.setAnimationLoop(null); music.stop(); rhythm.stop(); ui.rhud.classList.add('hidden'); },
+  resume() { timer.reset?.(); renderer.setAnimationLoop(loop); },
+} : null;
 
 // For quick inspection from the devtools console.
 Object.assign(window, { mochi: { scene, station, player, world, music, rhythm, get audio() { return audio; } } });

@@ -28,6 +28,14 @@ import { controllerCurl } from './hands.js';
 // guest and draws both players. Its 'hello' tells the host to send the dough and judgments ('judge').
 
 const POSE_DT = 1 / 45, DOUGH_DT = 1 / 12;
+// while the film camera records a take (its 'film-rate', every 0.5 s): poses at 60/s and the dough at 30/s, so
+// the offline render has a sample for nearly every frame
+const FILM_POSE_DT = 1 / 60, FILM_DOUGH_DT = 1 / 30, FILM_HOLD_MS = 1500;
+function filmWatch(net) {
+  let until = 0;
+  net.on('film-rate', (d, peer) => { if (peer.role === 'watch') until = performance.now() + FILM_HOLD_MS; });
+  return () => performance.now() < until;
+}
 const DOUGH_EASE = 0.35; // share of the way to the host's particles per update (~0.25 s to agree)
 
 function headPose(camera) {
@@ -57,6 +65,7 @@ export function avatarInputs(controllers = [], hands) {
 function createPoseLink({ net, hands, camera, scene, station, controllers, onPose }) {
   const avatar = createRabbitAvatar(scene, { variant: net.role === 'host' ? 'indigo' : 'red', hands, kine: () => station.kine });
   let clock = 0, acc = 0;
+  const filming = filmWatch(net);
   net.on('pose', (d, peer) => {
     if (peer.role !== (net.role === 'host' ? 'join' : 'host')) return;
     hands.setRemote(handsIn(d.hands)); avatar.set(d.head, clock, d.kine, d.effectors); onPose?.(d, clock, peer);
@@ -67,7 +76,7 @@ function createPoseLink({ net, hands, camera, scene, station, controllers, onPos
     update(dt) {
       clock += dt; acc += dt;
       avatar.update(clock, dt);
-      if (acc >= POSE_DT) { acc = 0; net.send('pose', { head: headPose(camera), hands: handsOut(hands), kine: station.heldKineTarget(), assetId: station.kineAssetId, effectors: avatarInputs(controllers, hands) }); }
+      if (acc >= (filming() ? FILM_POSE_DT : POSE_DT)) { acc = 0; net.send('pose', { head: headPose(camera), hands: handsOut(hands), kine: station.heldKineTarget(), assetId: station.kineAssetId, effectors: avatarInputs(controllers, hands) }); }
     },
   };
 }
@@ -76,7 +85,9 @@ export function createHostSync({ net, station, hands, camera, scene, controllers
   // the guest holding the kine: posed from each 'pose' message; let go if they go quiet for a second
   let kineSeen = -Infinity, phaseAcc = 0, doughAcc = 0, conditionAcc = 0, kineHolder = null;
   const hitReports = new Set();
-  const sendDough = (snap) => net.send('dough', { tier: snap.tier, N: snap.N, x: toB64(new Uint8Array(snap.x.buffer)), v: toB64(new Uint8Array(snap.v.buffer)) });
+  // coh: the dough's mean cohesion, its look, which a film playback can't simulate
+  const sendDough = (snap) => net.send('dough', { tier: snap.tier, N: snap.N, x: toB64(new Uint8Array(snap.x.buffer)), v: toB64(new Uint8Array(snap.v.buffer)), coh: station.dough.stats.cohesion });
+  const filming = filmWatch(net);
   const pose = createPoseLink({
     net, hands, camera, scene, station, controllers,
     onPose(d, now, peer) {
@@ -132,7 +143,7 @@ export function createHostSync({ net, station, hands, camera, scene, controllers
       if (phaseAcc >= 1) { phaseAcc = 0; net.send('phase', { phase: station.phase }); sendAsset(); }
       // the dough, while someone has joined
       doughAcc += dt;
-      if (doughAcc >= DOUGH_DT && (net.has('join') || net.has('watch'))) { doughAcc = 0; station.dough.requestSnapshot(sendDough); }
+      if (doughAcc >= (filming() ? FILM_DOUGH_DT : DOUGH_DT) && (net.has('join') || net.has('watch'))) { doughAcc = 0; station.dough.requestSnapshot(sendDough); }
     },
   };
 }
@@ -187,29 +198,38 @@ export function createGuestSync({ net, station, hands, camera, scene, controller
 // The film camera (?mp=watch): renders the host's world from a free camera and never changes it. It follows
 // the host's batch, dough, mallet and meters as the guest does, and draws both players: the host (red) with
 // hand slots 2, 3 and the guest (indigo) with 4, 5 (createHands { remoteSets: 2 }). It sends no poses.
+// apply(role, type, data) is the one way in, for live messages and for a recorded take played back
+// (src/film/render.js); exact turns off the easing, since a played-back take is already smooth and on time.
 export function createWatchSync({ net, station, hands, scene }) {
   station.setFollower(true);
   const players = {
     host: { set: 0, avatar: createRabbitAvatar(scene, { variant: 'red', hands, slotBase: 2, kine: () => station.kine }) },
     join: { set: 1, avatar: createRabbitAvatar(scene, { variant: 'indigo', hands, slotBase: 4, kine: () => station.kine }) },
   };
-  let clock = 0, kineFrom = null, kineSeen = -Infinity;
-  net.on('pose', (d, peer) => {
-    const p = players[peer.role];
-    if (!p) return;
-    hands.setRemote(handsIn(d.hands), p.set);
-    p.avatar.set(d.head, clock, d.kine, d.effectors);
-    if (peer.role === 'host' && d.assetId) station.setKineAsset(d.assetId);
-    if (!d.kine || (d.assetId && d.assetId !== station.kineAssetId)) return; // a pose from before a mallet change
-    if (station.mode === 'idle') station.setMode('remote');
-    if (station.mode === 'remote') { station.setRemoteKine(d.kine); kineFrom = peer.role; kineSeen = clock; }
-  });
-  const fromHost = (fn) => (d, peer) => { if (peer.role === 'host') fn(d); };
-  net.on('kine-asset', fromHost((d) => station.setKineAsset(d.assetId)));
-  net.on('conditioning', fromHost((state) => station.applyConditioning?.(state)));
-  net.on('hand-hit', fromHost((event) => station.receiveHandHit?.(event)));
-  net.on('phase', fromHost((m) => station.followPhase(m.phase)));
-  net.on('dough', fromHost((m) => station.dough.applySnapshot({ tier: m.tier, N: m.N, x: new Int16Array(fromB64(m.x).buffer), v: new Int16Array(fromB64(m.v).buffer) }, DOUGH_EASE)));
+  let clock = 0, kineFrom = null, kineSeen = -Infinity, exact = false;
+  const unpackDough = (m) => ({ tier: m.tier, N: m.N, x: new Int16Array(fromB64(m.x).buffer), v: new Int16Array(fromB64(m.v).buffer), coh: m.coh });
+  // hands: as sent (base64 per hand), or already decoded (Float32Array per hand, from a recording)
+  const decodeHands = (list) => list?.map((h) => (h == null ? null : typeof h === 'string' ? new Float32Array(fromB64(h).buffer) : h)) ?? [null, null];
+  function apply(role, type, d) {
+    if (type === 'pose') {
+      const p = players[role];
+      if (!p || !d) return;
+      hands.setRemote(decodeHands(d.hands), p.set);
+      p.avatar.set(d.head, clock, d.kine, d.effectors);
+      if (role === 'host' && d.assetId) station.setKineAsset(d.assetId);
+      if (!d.kine || (d.assetId && d.assetId !== station.kineAssetId)) return; // a pose from before a mallet change
+      if (station.mode === 'idle') station.setMode('remote');
+      if (station.mode === 'remote') { station.setRemoteKine(d.kine); kineFrom = role; kineSeen = clock; }
+      return;
+    }
+    if (role !== 'host') return;
+    if (type === 'kine-asset') station.setKineAsset(d.assetId);
+    else if (type === 'conditioning') station.applyConditioning?.(d);
+    else if (type === 'hand-hit') station.receiveHandHit?.(d);
+    else if (type === 'phase') station.followPhase(d.phase);
+    else if (type === 'dough') { if (!station.dough.playback) station.dough.applySnapshot(d.x instanceof Int16Array ? d : unpackDough(d), DOUGH_EASE); }
+  }
+  for (const type of ['pose', 'kine-asset', 'conditioning', 'hand-hit', 'phase', 'dough']) net.on(type, (d, peer) => apply(peer.role, type, d));
   return {
     role: 'watch',
     get peer() { return net.has('host'); },
@@ -217,6 +237,13 @@ export function createWatchSync({ net, station, hands, scene }) {
     get otherHead() { return null; },
     // the players' heads, for the camera's orbit (null while that person isn't seen)
     head(role) { return players[role]?.avatar.headPosition ?? null; },
+    apply, unpackDough, decodeHands,
+    get exact() { return exact; },
+    set exact(v) {
+      exact = !!v;
+      for (const p of Object.values(players)) p.avatar.exact = exact;
+      hands.exact = exact; station.setRemoteExact?.(exact);
+    },
     update(dt) {
       clock += dt;
       for (const p of Object.values(players)) p.avatar.update(clock, dt);
