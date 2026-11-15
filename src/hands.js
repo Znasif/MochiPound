@@ -144,9 +144,19 @@ export function createControllerHand({ material } = {}) {
     });
     balls.instanceMatrix.needsUpdate = tubes.instanceMatrix.needsUpdate = true;
   }
+  const world = [...joints.keys()].map(() => new THREE.Vector3()), radii = [...joints.keys()].map(() => 0);
+  const nq = new THREE.Quaternion(), nv = new THREE.Vector3();
   return {
     object3d: group,
+    material: mat,
     get joints() { return joints; },
+    // its joints in world space (reused vectors)
+    worldPoints() { inner.updateWorldMatrix(true, false); let k = 0; for (const j of joints.values()) inner.localToWorld(world[k++].copy(j.p)); return world; },
+    // their drawn radii, in the same order
+    radii() { let k = 0; for (const j of joints.values()) radii[k++] = j.r * HAND_VISUAL_SCALE; return radii; },
+    // move the drawn hand by a world-space shift (src/handContact.js: out of something solid), until its next update
+    nudge(shift) { group.updateWorldMatrix(true, false); group.getWorldQuaternion(nq).invert(); inner.position.add(nv.copy(shift).applyQuaternion(nq)); },
+    touching: false,
     // input: a gamepad, or controllerCurl()'s [trigger, squeeze, thumb] (the other player's, over the network).
     // held: handleFrame() of a mallet this hand holds (the hand moves onto its handle), or null
     update(dt, input, hand = side, held = null) {
@@ -184,11 +194,13 @@ export function createHands(renderer, rig, scene, controllers = [], { remoteSets
 
   // a hand slot: local slots 0, 1 (this headset), remote slots 2, 3 (the other headset)
   function slot(i, remote) {
-    const balls = new THREE.InstancedMesh(ballGeo, remote ? otherSkin : skin, 25), tubes = new THREE.InstancedMesh(tubeGeo, remote ? otherSkin : skin, BONES.length);
+    // a material of its own, so one wet hand can look wet (src/water.js)
+    const material = (remote ? otherSkin : skin).clone();
+    const balls = new THREE.InstancedMesh(ballGeo, material, 25), tubes = new THREE.InstancedMesh(tubeGeo, material, BONES.length);
     for (const m of [balls, tubes]) { m.frustumCulled = false; m.castShadow = true; m.visible = false; m.count = 0; scene.add(m); }
     balls.name = tubes.name = `${remote ? 'remote' : 'tracked'}-hand-${i}`;
     return {
-      i, remote, source: null, tracked: false, fresh: true, handedness: '', seen: -Infinity,
+      i, remote, material, source: null, tracked: false, fresh: true, handedness: '', seen: -Infinity,
       joints: new Map(), // name -> { center, r }: this frame's tracked joints
       // dough colliders, one per bone (kept, so the dough can follow each one's motion by id)
       bones: BONES.map((_, k) => ({ id: `hand${i}-${k}`, group: `hand${i}`, kind: 'cylinder', center: new THREE.Vector3(), quat: new THREE.Quaternion(), r: 0, h: 0, tack: HAND.tack, friction: HAND.friction, mould: HAND.mould, reset: true })),
@@ -219,10 +231,13 @@ export function createHands(renderer, rig, scene, controllers = [], { remoteSets
   const all = [...local, ...remote];
   // each controller shows a hand (createControllerHand), drawn like the tracked hands
   const controllerHands = controllers.map((controller) => {
-    const hand = createControllerHand({ material: skin }); controller.grip.add(hand.object3d);
+    const hand = createControllerHand({ material: skin.clone() }); controller.grip.add(hand.object3d);
     return { controller, hand, held: { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), radius: 0 } };
   });
-  const inv = new THREE.Matrix4();
+  const inv = new THREE.Matrix4(), probeList = [];
+  // solid things hands can't go into (src/handContact.js; setContact)
+  let contact = null;
+  const contactPts = [], contactRad = [], shift = new THREE.Vector3();
 
   // build a slot's colliders and drawing from its joints (h.joints)
   function build(h, dt) {
@@ -278,6 +293,19 @@ export function createHands(renderer, rig, scene, controllers = [], { remoteSets
     // this headset's own hands (the other headset's don't move you to the kneading spot)
     get any() { return local.some((h) => h.tracked); },
     get remoteAny() { return remote.some((h) => h.tracked); },
+    // the solid things (createHandContact) this headset's hands, and the other person's controller hands, stop at
+    setContact(c) { contact = c; },
+    get contact() { return contact; },
+    // every hand that can be seen, for the bucket's water (src/water.js): its points in world space, whether it
+    // is this headset's own (its dips are counted here; the other person's on their own headset), its material
+    probes() {
+      probeList.length = 0;
+      for (const h of all) if (h.tracked) probeList.push({ key: `hand${h.i}`, local: !h.remote, points: h.spheres.map((sp) => sp.center), material: h.material });
+      controllerHands.forEach(({ hand }, k) => {
+        if (hand.object3d.visible) probeList.push({ key: `controller${k}`, local: true, points: hand.worldPoints(), material: hand.material });
+      });
+      return probeList;
+    },
     // after the rig jumps (teleport), the next frame's motion is not a hand movement
     jumped() { for (const h of local) h.fresh = true; },
     update(dt) {
@@ -296,6 +324,14 @@ export function createHands(renderer, rig, scene, controllers = [], { remoteSets
           let e = h.joints.get(name);
           if (!e) { e = { center: new THREE.Vector3(), r: 0 }; h.joints.set(name, e); }
           e.center.setFromMatrixPosition(j.matrixWorld); e.r = j.jointRadius ?? 0;
+        }
+        // out of anything solid (src/handContact.js), before its colliders are built: the dough and the mallet
+        // feel the hand where it is drawn
+        if (contact) {
+          contactPts.length = 0; contactRad.length = 0;
+          for (const e of h.joints.values()) { contactPts.push(e.center); contactRad.push(e.r * HAND_VISUAL_SCALE); }
+          h.touching = contact.resolve(contactPts, contactRad, shift) > 0;
+          if (h.touching) for (const e of h.joints.values()) e.center.add(shift);
         }
         build(h, dt);
       }
@@ -318,6 +354,13 @@ export function createHands(renderer, rig, scene, controllers = [], { remoteSets
         const tool = c.grip.children.find((o) => o !== hand.object3d && o.getObjectByName('kine-head'));
         c.grip.updateWorldMatrix(true, false);
         hand.update(dt, c.source.gamepad, c.handedness, tool ? handleFrame(tool, inv.copy(c.grip.matrixWorld).invert(), held) : null);
+        if (contact) {
+          const depth = contact.resolve(hand.worldPoints(), hand.radii(), shift);
+          if (depth > 0) hand.nudge(shift);
+          // touching something gives the controller a light tap as the touch begins
+          if (depth > 0.002 && !hand.touching) { try { c.source?.gamepad?.hapticActuators?.[0]?.pulse?.(0.25, 25)?.catch?.(() => {}); } catch { /* no haptics */ } }
+          hand.touching = depth > 0.002;
+        }
       }
     },
     // this headset's hands for sending: per hand, the joints as x, y, z, radius in JOINTS order (NaN = not

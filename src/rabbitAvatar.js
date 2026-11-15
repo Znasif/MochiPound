@@ -1,11 +1,13 @@
-// Rigged Moon Rabbit players: separate headset and left/right inputs, two-bone limb IK,
-// planted steps driven by world travel, and a torso that lets the neck turn independently.
+// Rigged Moon Rabbit players: separate headset and left/right inputs, two-bone limb IK, procedural steps
+// (planted feet that step when the body moves or turns away from them), and a torso that lets the neck turn
+// independently.
 import * as THREE from 'three';
 import { removeAuthoredRabbitHands } from './pawVisual.js';
 import { createControllerHand, handleFrame, CONTROLLER_WRIST } from './hands.js';
 
 const STALE = 2.5, MODEL_EYE_Y = 1.16;
 const FACE_CAMERA = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const GRIP_TO_PAW = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
 const canonical = (name) => name.replace(/[_.\s]/g, '').toLowerCase();
 const p0 = new THREE.Vector3(), p1 = new THREE.Vector3(), p2 = new THREE.Vector3();
@@ -31,6 +33,21 @@ function aimBone(bone, end, target) {
   bone.getWorldQuaternion(q).premultiply(rotation);
   bone.parent.getWorldQuaternion(parentQ).invert();
   bone.quaternion.copy(parentQ).multiply(q); bone.updateWorldMatrix(false, true);
+}
+
+// Turn a bone (at most maxAngle) so that its child `end` points toward a world target. Own scratch quaternions:
+// the caller's q is in use.
+const bq = new THREE.Quaternion(), bq2 = new THREE.Quaternion(), IDENTITY = new THREE.Quaternion();
+function bendToward(bone, end, target, maxAngle) {
+  bone.getWorldPosition(p0); end.getWorldPosition(p1);
+  dir.subVectors(p1, p0); axis.subVectors(target, p0);
+  if (dir.lengthSq() < 1e-8 || axis.lengthSq() < 1e-8) return;
+  bq.setFromUnitVectors(dir.normalize(), axis.normalize());
+  const angle = 2 * Math.acos(Math.min(1, Math.abs(bq.w)));
+  if (angle > maxAngle) bq.slerp(IDENTITY, 1 - maxAngle / angle);
+  bone.getWorldQuaternion(bq2).premultiply(bq);
+  bone.parent.getWorldQuaternion(parentQ).invert();
+  bone.quaternion.copy(parentQ).multiply(bq2); bone.updateWorldMatrix(false, true);
 }
 
 // Two-bone IK keeps the authored limb lengths; unreachable targets extend the arm without stretching it.
@@ -71,17 +88,18 @@ export function createRabbitAvatar(scene, { variant = 'indigo', hands, slotBase 
   const root = new THREE.Group(); root.name = 'other-player'; root.visible = false; scene.add(root);
   const visual = new THREE.Group(); visual.rotation.y = Math.PI; root.add(visual);
   const fallback = fallbackRabbit(variant); visual.add(fallback);
-  let model = null, bones = [], bind = [], head = null, hips = null, scale = null, seen = -Infinity, lastYaw = 0;
-  let bodyYaw = null, gaitPhase = 0, walkBlend = 0, resetFeet = true;
+  let model = null, bones = [], bind = [], head = null, hips = null, torso = null, scale = null, seen = -Infinity, lastYaw = 0;
+  let bodyYaw = null, walkBlend = 0, walking = false, stillFor = 0, lastStep = null, resetFeet = true;
   const arms = [], legs = [];
   // the other person's controllers: the same hand as their tracked hands (src/hands.js), at each grip
   const controllerPaws = ['left', 'right'].map((side) => ({ side, hand: createControllerHand(), held: { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), radius: 0 } }));
-  const gripM = new THREE.Matrix4(), ONE = new THREE.Vector3(1, 1, 1);
+  const gripM = new THREE.Matrix4(), ONE = new THREE.Vector3(1, 1, 1), contactShift = new THREE.Vector3();
   for (const paw of controllerPaws) scene.add(paw.hand.object3d);
   const position = new THREE.Vector3(), targetP = new THREE.Vector3(), targetQ = new THREE.Quaternion(), orientation = new THREE.Quaternion();
   const forward = new THREE.Vector3(), eyeOffset = new THREE.Vector3(), target = new THREE.Vector3(), pole = new THREE.Vector3();
   const foot = new THREE.Vector3(), kinePosition = new THREE.Vector3();
   const previous = new THREE.Vector3(), velocity = new THREE.Vector3(), travel = new THREE.Vector3();
+  const bodyPrev = new THREE.Vector3(), lead = new THREE.Vector3(), support = new THREE.Vector3(), modelQ = new THREE.Quaternion();
   const moveDirection = new THREE.Vector3(0, 0, -1), pawQ = new THREE.Quaternion(), footQ = new THREE.Quaternion();
   let heldKine = null, effectors = {}, exact = false;
 
@@ -93,7 +111,7 @@ export function createRabbitAvatar(scene, { variant = 'indigo', hands, slotBase 
     });
     bind = bones.map((bone) => ({ bone, position: bone.position.clone(), quaternion: bone.quaternion.clone() }));
     const find = (name) => bones.find((bone) => canonical(bone.name) === canonical(name));
-    head = find('head'); hips = find('hips');
+    head = find('head'); hips = find('hips'); torso = find('torso');
     if (!head || !hips) throw new Error('rabbit rig has no head/hips bones');
     root.updateMatrixWorld(true);
     for (const side of ['L', 'R']) {
@@ -104,7 +122,7 @@ export function createRabbitAvatar(scene, { variant = 'indigo', hands, slotBase 
       legs.push({ side, upper: find(`Thigh.${side}`), lower: find(`Shin.${side}`), end,
         rest: end ? model.worldToLocal(end.getWorldPosition(new THREE.Vector3())) : new THREE.Vector3(),
         restQ: end ? modelQ.multiply(end.getWorldQuaternion(new THREE.Quaternion())) : new THREE.Quaternion(),
-        planted: new THREE.Vector3(), start: new THREE.Vector3(), goal: new THREE.Vector3(), swinging: false });
+        planted: new THREE.Vector3(), start: new THREE.Vector3(), goal: new THREE.Vector3(), neutral: new THREE.Vector3(), yaw: 0, swing: null });
     }
     fallback.visible = false;
     console.info(`[avatar] ${variant} Moon Rabbit ready`);
@@ -126,7 +144,7 @@ export function createRabbitAvatar(scene, { variant = 'indigo', hands, slotBase 
       targetP.fromArray(pose); targetQ.fromArray(pose, 3).normalize(); heldKine = kine; effectors = inputs ?? {};
       if (now - seen > STALE || position.distanceTo(targetP) > 1) {
         position.copy(targetP); previous.copy(targetP); orientation.copy(targetQ); velocity.set(0, 0, 0);
-        resetFeet = true; bodyYaw = null; gaitPhase = 0; walkBlend = 0;
+        resetFeet = true; bodyYaw = null; walkBlend = 0; walking = false; stillFor = 0;
       }
       seen = now;
     },
@@ -145,18 +163,14 @@ export function createRabbitAvatar(scene, { variant = 'indigo', hands, slotBase 
             if (frame && frame.position.length() > 0.15) frame = null;
           }
           hand.update(dt, Array.isArray(input.curl) ? input.curl : [0, 0, 1], side, frame);
+          // out of anything solid, as their own headset draws it (src/handContact.js)
+          if (hands?.contact && hands.contact.resolve(hand.worldPoints(), hand.radii(), contactShift) > 0) hand.nudge(contactShift);
         }
       }
       if (!root.visible) return;
       const blend = exact ? 1 : 1 - Math.exp(-dt * 20); // exact: a film playback, already smooth and on time
       previous.copy(position);
       position.lerp(targetP, blend); orientation.slerp(targetQ, blend);
-      travel.subVectors(position, previous).setY(0);
-      const speed = dt > 0 ? Math.min(3.5, travel.length() / dt) : 0;
-      velocity.lerp(dt > 0 ? travel.multiplyScalar(1 / dt) : travel, 1 - Math.exp(-dt * 10));
-      const walking = velocity.length() > 0.12;
-      walkBlend += ((walking ? 1 : 0) - walkBlend) * (1 - Math.exp(-dt * 10));
-      if (walking) moveDirection.copy(velocity).normalize();
       scale ??= THREE.MathUtils.clamp(position.y, 1.25, 1.9) / MODEL_EYE_Y;
       visual.scale.setScalar(scale);
       forward.set(0, 0, -1).applyQuaternion(orientation);
@@ -167,40 +181,91 @@ export function createRabbitAvatar(scene, { variant = 'indigo', hands, slotBase 
       const torsoTurn = walking ? turn : Math.sign(turn) * Math.max(0, Math.abs(turn) - Math.PI / 3);
       bodyYaw += torsoTurn * (1 - Math.exp(-dt * 4));
       root.rotation.y = bodyYaw;
-      eyeOffset.set(0, 0, -0.2 * scale).applyQuaternion(root.quaternion);
-      root.position.set(position.x - eyeOffset.x, 0, position.z - eyeOffset.z);
+      // Where the feet belong (the support point): under the head, 20 cm behind the eyes. Leaning in over the
+      // mortar (the head dipping and looking down) bends the body forward over the feet instead of moving them,
+      // so that part of the head's forward travel is discounted. Squatting (dipping while looking ahead) keeps
+      // the feet and sits the hips back. The torso bends toward the head either way (below).
+      const dip = THREE.MathUtils.clamp(MODEL_EYE_Y * scale - position.y, 0, 0.5);
+      const lookDown = THREE.MathUtils.clamp((-Math.asin(THREE.MathUtils.clamp(forward.y, -1, 1)) - 0.35) / 0.5, 0, 1);
+      // (tuned on the real rig, .tmp/gait/compare.mjs: leaning keeps the feet planted and the neck within ~9 cm)
+      const hipsBack = 0.15 * dip * (1 - 0.7 * lookDown);
+      eyeOffset.set(0, 0, -(0.2 * scale + 0.2 * dip * lookDown)).applyQuaternion(root.quaternion);
+      support.set(position.x - eyeOffset.x, 0, position.z - eyeOffset.z);
+      eyeOffset.set(0, 0, -hipsBack).applyQuaternion(root.quaternion);
+      root.position.copy(support).sub(eyeOffset);
+      // Walking is the support point's travel on the ground, not the head's (looking around, swaying and
+      // leaning in aren't), with some hysteresis so it doesn't flicker at the threshold.
+      if (resetFeet) bodyPrev.copy(support);
+      travel.subVectors(support, bodyPrev); bodyPrev.copy(support);
+      if (dt > 0) velocity.lerp(travel.multiplyScalar(1 / dt), 1 - Math.exp(-dt * 8));
+      if (resetFeet) velocity.set(0, 0, 0);
+      if (velocity.length() > 3.5) velocity.setLength(3.5);
+      const speed = velocity.length();
+      walking = speed > (walking ? 0.12 : 0.22);
+      walkBlend += ((walking ? 1 : 0) - walkBlend) * (1 - Math.exp(-dt * 10));
+      if (speed > 0.05) moveDirection.copy(velocity).normalize();
+      stillFor = speed < 0.05 ? stillFor + dt : 0;
       if (!model) { visual.position.y = position.y - MODEL_EYE_Y * scale; return; }
       visual.position.y = 0;
       for (const b of bind) { b.bone.position.copy(b.position); b.bone.quaternion.copy(b.quaternion); }
-      // Crouch at the hips and bend the knees, rather than scaling the body every frame.
-      hips.position.y += THREE.MathUtils.clamp((position.y - MODEL_EYE_Y * scale) / scale, -0.32, 0.15) - 0.035;
+      // Crouch at the hips and bend the knees, rather than scaling the body every frame; leaning in drops the hips
+      // less (the torso bends instead).
+      hips.position.y += THREE.MathUtils.clamp((position.y - MODEL_EYE_Y * scale) * (1 - 0.7 * lookDown) / scale, -0.32, 0.15) - 0.035;
       root.updateMatrixWorld(true);
-      const stride = 0.6 * scale;
-      gaitPhase = (gaitPhase + dt * (walking ? Math.max(0.65, speed / stride) : walkBlend * 1.5)) % 1;
-      for (const leg of legs) {
-        foot.copy(leg.rest); model.localToWorld(foot);
-        const phase = (gaitPhase + (leg.side === 'R' ? 0.5 : 0)) % 1;
-        const swing = phase >= 0.5 && walkBlend > 0.05;
-        if (resetFeet) { leg.planted.copy(foot); leg.goal.copy(foot); leg.swinging = false; }
-        if (swing) {
-          if (!leg.swinging) { leg.start.copy(leg.planted); leg.goal.copy(foot).addScaledVector(moveDirection, stride * 0.25); }
-          const t = (phase - 0.5) * 2, eased = t * t * (3 - 2 * t);
-          foot.lerpVectors(leg.start, leg.goal, eased); foot.y += Math.sin(t * Math.PI) * 0.075 * scale * walkBlend;
-        } else {
-          if (leg.swinging) leg.planted.copy(leg.goal);
-          if (!walking) leg.planted.lerp(foot, 1 - Math.exp(-dt * 5));
-          foot.copy(leg.planted);
+      model.getWorldQuaternion(modelQ);
+      // Procedural stepping. Each foot stays planted on the ground until the body has moved or turned too far from
+      // it, then steps to where it will rest under the body when it lands: half a step ahead of its rest spot
+      // along the body's travel, so it passes under the hip mid-stance. One foot at a time, so walking
+      // alternates by itself and its rhythm follows the speed. Standing still, a foot left off-centre settles.
+      // each foot's rest spot: its authored stance around the support point (the hips may sit back of it)
+      lead.set(0, 0, -hipsBack).applyQuaternion(root.quaternion);
+      for (const leg of legs) { leg.neutral.copy(leg.rest); model.localToWorld(leg.neutral).add(lead); }
+      if (resetFeet) for (const leg of legs) { leg.planted.copy(leg.neutral); leg.yaw = bodyYaw; leg.swing = null; }
+      const reach = 0.45 * scale;
+      if (!legs.some((leg) => leg.swing)) {
+        let pick = null, worst = 0;
+        for (const leg of legs) {
+          const err = Math.hypot(leg.planted.x - leg.neutral.x, leg.planted.z - leg.neutral.z) / scale;
+          const yawErr = Math.abs(Math.atan2(Math.sin(bodyYaw - leg.yaw), Math.cos(bodyYaw - leg.yaw)));
+          const lean = 0.6 * dip * lookDown / scale; // leaning in reaches further before a step
+          const need = err > 0.16 + lean || yawErr > 0.6 || (stillFor > 0.5 && (err > 0.05 + lean || yawErr > 0.25));
+          const score = err + 0.2 * yawErr - (leg === lastStep ? 0.02 : 0); // alternate when it's a near thing
+          if (need && score > worst) { worst = score; pick = leg; }
         }
-        leg.swinging = swing;
-        pole.set(0, 0, -1).applyQuaternion(root.quaternion);
+        if (pick) {
+          const far = Math.hypot(pick.planted.x - pick.neutral.x, pick.planted.z - pick.neutral.z) > reach;
+          pick.start.copy(pick.planted);
+          pick.swing = { t: 0, fromYaw: pick.yaw, duration: far ? 0.14 : THREE.MathUtils.clamp(0.3 - 0.06 * speed, 0.18, 0.3) };
+        }
+      }
+      for (const leg of legs) {
+        let yaw = leg.yaw;
+        if (leg.swing) {
+          const sw = leg.swing;
+          sw.t = Math.min(1, sw.t + dt / sw.duration);
+          // aimed where its rest spot will be at landing, plus half a step: re-aimed every frame, so turns and
+          // speed changes during the step are followed
+          lead.copy(velocity).multiplyScalar(sw.duration * (1 - sw.t) + sw.duration * 0.5);
+          if (lead.length() > reach) lead.setLength(reach);
+          leg.goal.copy(leg.neutral).add(lead); leg.goal.y = leg.neutral.y;
+          const e = sw.t * sw.t * (3 - 2 * sw.t);
+          foot.lerpVectors(leg.start, leg.goal, e);
+          foot.y += Math.sin(sw.t * Math.PI) * (0.05 + 0.03 * Math.min(1, speed)) * scale;
+          yaw = sw.fromYaw + Math.atan2(Math.sin(bodyYaw - sw.fromYaw), Math.cos(bodyYaw - sw.fromYaw)) * e;
+          if (sw.t >= 1) { leg.planted.copy(leg.goal); leg.yaw = bodyYaw; leg.swing = null; lastStep = leg; }
+        } else foot.copy(leg.planted);
+        // the knee points the way its foot does; a planted foot keeps its own direction on the ground
+        pole.set(-Math.sin(yaw), 0, -Math.cos(yaw));
         solveLimb(leg.upper, leg.lower, leg.end, foot, pole);
-        if (leg.end) { model.getWorldQuaternion(footQ).multiply(leg.restQ); orientBone(leg.end, footQ); }
+        if (leg.end) { footQ.setFromAxisAngle(Y_AXIS, yaw - bodyYaw).multiply(modelQ).multiply(leg.restQ); orientBone(leg.end, footQ); }
       }
       resetFeet = false;
       // Asset faces +Z; the headset looks -Z. Eye offset is relative to the authored head bone.
       q.copy(orientation).multiply(FACE_CAMERA);
       eyeOffset.set(0, MODEL_EYE_Y - 1, 0.2).multiplyScalar(scale).applyQuaternion(q);
       target.copy(position).sub(eyeOffset);
+      // the torso bends toward where the head is (leaning in, squatting; at most 60 degrees), so the neck doesn't stretch
+      if (torso) bendToward(torso, head, target, 1.05);
       head.parent.worldToLocal(target); head.position.copy(target);
       head.parent.getWorldQuaternion(parentQ).invert(); head.quaternion.copy(parentQ).multiply(q);
       head.updateWorldMatrix(false, true);

@@ -6,6 +6,8 @@ import { createStation, HAND_HIT_COOLDOWN_S } from './station.js';
 import { createSteam } from './effects.js';
 import { createPlayer } from './player.js';
 import { createHands } from './hands.js';
+import { createHandContact } from './handContact.js';
+import { usuShape } from './props.js';
 import { TIERS, particlesFor } from './dough/mpm-core.js';
 import { createNet, roleFromUrl } from './net.js';
 import { createHostSync, createGuestSync, createWatchSync } from './sync.js';
@@ -89,6 +91,8 @@ if (world.spawn) player.teleport(world.spawn.position[0], world.spawn.position[2
 // (the film camera, ?mp=watch, draws both players' hands: two remote sets)
 const hands = createHands(renderer, player.rig, scene, player.controllers, { remoteSets: roleFromUrl() === 'watch' ? 2 : 1 });
 station.setHands(hands);
+// hands stop at the mortar, the ground and the water bucket (src/handContact.js)
+hands.setContact(createHandContact({ usu: usuShape(station.usu), oke: L.OKE, groundY: 0 }));
 
 // two headsets (src/net.js, src/sync.js): 'host' runs everything and sends it out, 'join' draws the host's
 // scene and kneads its dough with tracked hands; 'solo' is one headset alone. 'watch' is the film camera:

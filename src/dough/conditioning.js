@@ -41,6 +41,8 @@ export function createConditioning() {
       revision++;
     },
     water() { moisture = clamp(moisture + CONDITIONING.waterPerDip); revision++; },
+    // both full (station.js DEMO_ONE_STRIKE: one strike finishes a batch, for debugging and demo videos)
+    fill() { elasticity = 1; moisture = 1; revision++; },
     // one rhythm judgment { epoch, action: 'strike' | 'knead', kind: 'perfect' | 'good' | 'miss', id: the turn };
     // true when it completed its turn (the elasticity changed)
     judge({ epoch: batch, action, id, kind } = {}) {

@@ -6,6 +6,7 @@ import { createKineContact } from './kineContact.js';
 import { makeUsu, usuShape } from './props.js';
 import { MALLETS, makeSongMallet } from './moonGarden/story/mallets.js';
 import { createConditioning } from './dough/conditioning.js';
+import { createBucketWater } from './water.js';
 
 // The pounding station: the usu, the kine, the dough and the hand-water bucket, nothing else (2026-11-15,
 // the user's call when the Moon garden replaced the shrine courtyard: no NPC pounder, no rice carrier,
@@ -38,12 +39,17 @@ const ease = (x) => x * x * (3 - 2 * x);
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 
 export const HAND_HIT_COOLDOWN_S = 5; // s between two hand-hit penalties (the mallet on a hand)
+// DEMO (the user, 2026-11-15, for debugging and demo videos): the first strike of a batch fills its elasticity and
+// moisture, so it is done and the mochi flies to the Earth. Off (the user's call, the same day); ?demo=1 in the
+// host's URL turns it on.
+export const DEMO_ONE_STRIKE = (typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('demo')) === '1';
 
 export function createStation(scene) {
   let hands = null; // tracked hands (src/hands.js), set by setHands
   const listeners = {};
   const emit = (name, data) => { for (const fn of listeners[name] ?? []) fn(data); };
   const conditioning = createConditioning();
+  if (DEMO_ONE_STRIKE) console.info('[station] DEMO (?demo=1): one strike finishes a batch');
   // multiplayer guest (src/sync.js): runs everything itself, but starts each batch phase when the host does
   let follower = false, hostPhase = null, hostPhaseAt = 0;
   const root = new THREE.Group();
@@ -88,8 +94,8 @@ export function createStation(scene) {
   // (its mortar is the exact one drawn above, read back from the meshes, as the mallet's collision is)
   const dough = createDough(scene, { usu: usuShape(usu), map: riceMat.map });
   // Conditioning sweeps exactly one material parameter, Young's modulus (the user's call, 2026-11-15).
-  // Moisture is only the dough's colour (whiter with more water, browner with less). The dough's wetness
-  // (tack and hand friction) stays the bucket dip's, as before: a dip wets it, strikes work it in.
+  // Water does one thing to the dough, its colour (moisture: whiter with more water, browner with less; the
+  // user's call). The dough's old `wet` (a dip made it slide off hands and the mallet) is no longer set.
   function applyMaterialState() {
     dough.setYoungsModulus(conditioning.youngsModulus);
     dough.setMoisture?.(conditioning.snapshot().moisture);
@@ -229,6 +235,7 @@ export function createStation(scene) {
   let ending = null, storyBlocked = false;
 
   // ---------- oke (hand-water bucket) ----------
+  let waterMesh = null;
   const oke = new THREE.Group();
   oke.name = 'oke';
   oke.position.set(...L.OKE.position);
@@ -255,12 +262,15 @@ export function createStation(scene) {
       hoop.position.y = y;
       tubGroup.add(hoop);
     }
-    const water = new THREE.Mesh(new THREE.CircleGeometry(r * 0.97, 18), new THREE.MeshStandardMaterial({ color: 0x24384a, roughness: 0.1, metalness: 0.2 }));
-    water.rotation.x = -Math.PI / 2;
-    water.position.y = h - 0.06;
-    tubGroup.add(water);
+    waterMesh = new THREE.Mesh(new THREE.CircleGeometry(r * 0.97, 32), new THREE.MeshStandardMaterial());
+    waterMesh.rotation.x = -Math.PI / 2;
+    waterMesh.position.y = h - 0.06;
+    waterMesh.name = 'oke-water';
+    tubGroup.add(waterMesh);
   }
   const okeWater = v3(L.OKE.position).add(new THREE.Vector3(0, L.OKE.stand + L.OKE.height - 0.06, 0));
+  // the water itself (src/water.js): dips, ripples, splashes, wet hands; its only effect on the dough is colour
+  const bucketWater = createBucketWater({ parent: root, centre: okeWater, radius: L.OKE.radius * 0.97, bottom: L.OKE.stand + 0.01, surface: waterMesh });
 
   // ---------- spots ----------
   // where the kneading person stands (the old turner NPC's spot); also the Satie fixture host 'turner'
@@ -284,7 +294,7 @@ export function createStation(scene) {
     mode: 'idle', // 'idle' (nobody holds the kine) | 'desktop' | 'vr' | 'remote' (the other headset)
     lastStrikeAt: -10, clock: 0,
     handsIn: false, // a tracked hand is in the bowl
-    slap: [{ inside: false }, { inside: false }], dipping: false, // per-hand dough contact, hand in the bucket
+    slap: [{ inside: false }, { inside: false }], // per-hand dough contact
     swing: null, // desktop swing { t, from }
     vr: { grip: null, armed: true, prevHead: new THREE.Vector3(), vel: 0, ready: false },
     _fall: null, _land: null, _dropped: false, _lifted: false, _liftFrom: null,
@@ -318,7 +328,7 @@ export function createStation(scene) {
     st.lastStrikeAt = st.clock;
     // fire first, then move the signal the strike changes (the event reads the signal as it fires)
     emit('pound', { by, strength, rushed, interval, progress: st.progress });
-    dough.setWetness(dough.wetness * 0.6); // the water from the last dip is worked in
+    if (DEMO_ONE_STRIKE && !follower) { conditioning.fill(); applyMaterialState(); emit('conditioning', conditioning.snapshot()); }
     st.strikes += rushed ? 0.5 : 1;
     st.progress = clamp01(st.strikes / L.POUNDING.strikesPerBatch);
     shapeDough(st.progress);
@@ -331,8 +341,7 @@ export function createStation(scene) {
   }
 
   // ---------- the kneading hands: in the bowl, slapping the dough, dipping in the bucket ----------
-  const okeR = L.OKE.radius * 0.97; // the water's surface disc (drawn below)
-  function updateHands() {
+  function updateHands(dt) {
     st.handsIn = false;
     if (!hands) return;
     for (const sp of hands.spheres) if (inZone(sp.center)) { st.handsIn = true; break; }
@@ -349,17 +358,21 @@ export function createStation(scene) {
         }
       } else if (sl.inside && d < 0.25) sl.inside = false;
     }
-    // a hand in the bucket's water wets the hands, and the dough they work (dip)
-    let wet = false;
-    for (const sp of hands.spheres) {
-      if (Math.hypot(sp.center.x - okeWater.x, sp.center.z - okeWater.z) < okeR && sp.center.y < okeWater.y) { wet = true; break; }
-    }
-    if (wet && !st.dipping) {
+    // a hand dipped in the bucket's water (src/water.js; tracked hands and controller hands alike): +10% moisture,
+    // the dough's only response being its colour. Each person's own headset counts their own dips (the guest
+    // reports its to the host, which owns the moisture); the other person's hands only splash here.
+    for (const dip of bucketWater.update(dt, hands.probes?.() ?? [])) {
       emit('dip');
-      dough.setWetness(1);
-      if (!follower && st.phase === 'pound') { conditioning.water(); applyMaterialState(); emit('conditioning', conditioning.snapshot()); }
+      if (!dip.local || st.phase !== 'pound' || storyBlocked) continue;
+      if (follower) emit('water-report', {}); else addWater();
     }
-    st.dipping = wet;
+  }
+  function addWater() { conditioning.water(); applyMaterialState(); emit('conditioning', conditioning.snapshot()); }
+  let lastReportedWater = -Infinity;
+  // the guest's dip (src/sync.js 'water'), on the host: at most one every 0.3 s
+  function receiveWater() {
+    if (follower || storyBlocked || st.phase !== 'pound' || st.clock - lastReportedWater < 0.3) return;
+    lastReportedWater = st.clock; addWater();
   }
 
   // ---------- per-frame ----------
@@ -367,7 +380,7 @@ export function createStation(scene) {
     st.clock += dt;
     if (follower) followHost();
     st.t += dt;
-    updateHands();
+    updateHands(dt);
     if (st.phase === 'load') updateLoad(dt);
     else if (st.phase === 'pound') updatePound(dt);
     else if (st.phase === 'done') updateDone(dt);
@@ -455,7 +468,7 @@ export function createStation(scene) {
         mochi.position.y -= 4.9 * st._fall * st._fall;
         if (mochi.position.y <= DOUGH_SPAWN_Y) {
           const at = mochi.position.clone().setY(DOUGH_SPAWN_Y);
-          dough.setWetness(0); applyMaterialState();
+          applyMaterialState();
           // a guest whose dough the host's already arrived in (the host got here first) doesn't add a second
           if (!(follower && dough.stats.count > 0)) dough.spawn(at, DOUGH_RADIUS, [0, -9.8 * st._fall, 0]);
           mochi.visible = false;
@@ -582,7 +595,7 @@ export function createStation(scene) {
     if (st.phase === 'load') {
       mochi.visible = false; st._fall = null; st._land = null;
       if (phase !== 'load' && dough.stats.count === 0) { // the rice it would have dropped
-        dough.setWetness(0); applyMaterialState();
+        applyMaterialState();
         dough.spawn(doughRest.clone().setY(DOUGH_SPAWN_Y), DOUGH_RADIUS, [0, 0, 0]);
         st.progress = 0; st.strikes = 0; shapeDough(0); dough.setProgress(0);
       }
@@ -616,6 +629,7 @@ export function createStation(scene) {
     recordJudgment,
     applyConditioning(state) { if (follower && conditioning.apply(state)) applyMaterialState(); },
     reportHandHit,
+    receiveWater,
     receiveHandHit(event) {
       if (!follower || !event || typeof event.id !== 'string' || event.epoch < conditioning.snapshot().epoch || receivedHits.has(event.id)) return;
       receivedHits.add(event.id);

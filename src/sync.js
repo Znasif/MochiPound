@@ -110,6 +110,8 @@ export function createHostSync({ net, station, hands, camera, scene, controllers
     if (event.action === 'strike' && peer.from !== kineHolder) return;
     station.recordJudgment?.(event);
   });
+  // the guest's own dips in the water bucket (it sees its hands best, controllers included): its moisture, here
+  net.on('water', (d, peer) => { if (peer.role === 'join') station.receiveWater?.(); });
   net.on('hand-hit-report', (event, peer) => {
     if (peer.role !== 'join' || typeof event.id !== 'string' || event.id.length > 80 || event.epoch !== station.conditioning?.epoch) return;
     const key = `${peer.from}:${event.id}`;
@@ -165,6 +167,7 @@ export function createGuestSync({ net, station, hands, camera, scene, controller
   net.on('conditioning', (state, peer) => { if (peer.role === 'host') station.applyConditioning?.(state); });
   net.on('hand-hit', (event, peer) => { if (peer.role === 'host') station.receiveHandHit?.(event); });
   let hitSequence = 0;
+  station.on('water-report', () => net.send('water', {}));
   station.on('kine_contact', (contact) => {
     if (contact.kind === 'hand' && station.phase === 'pound') {
       net.send('hand-hit-report', { id: String(++hitSequence), epoch: station.conditioning?.epoch });

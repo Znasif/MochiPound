@@ -30,10 +30,14 @@ Wait for the kneader's hands to leave the bowl between strikes. 22 strikes turn 
 
 ## Elasticity and moisture
 
+For a quick demo, `?demo=1` in the host's URL makes one strike finish a batch, so the mochi flies to the Earth straight away.
+
+Hands stop at the mortar, the ground and the water bucket instead of passing through them; a controller taps your hand as it touches. The dough still gives way to them.
+
 Two small, translucent bars sit behind the mortar while you pound:
 
 - **Elasticity.** Fresh rice starts very stiff and softens only through rhythm, for both players. Each player keeps their own score as usual. Every turn, meaning one strike and the knead after it, adds the average of the two players' points to the elasticity: **Perfect** +5%, **Good** +1%, **Bad** (a miss) −3%. Two perfect players make it fully elastic in 20 turns; two bad ones stiffen it again. A turn needs both judgments, so pounding alone, kneading alone, or free play without a song changes nothing. Only one material value changes, the dough's stiffness (Young's modulus), from 8 kPa down to 1.2 kPa.
-- **Moisture.** It sets the dough's colour: white when watered, browning as it dries. It falls about 1% a second, and each dip of a hand in the water bucket adds 10%.
+- **Moisture.** It sets the dough's colour, white when watered and browning as it dries, and that's all water does to the dough. It falls about 1% a second. Each dip of a hand in the water bucket adds 10%: the hand has to go clearly under the surface, and a hand on a controller counts too. The water ripples and splashes, and a wet hand looks wet and drips for a few seconds.
 - **Done.** The mochi flies to the Earth only when elasticity **and** moisture are both above 95%, never just one; the number of strikes doesn't end the batch.
 - **Hitting a hand.** If the mallet hits a hand in the bowl, you lose 500 points and your combo (at most once every 5 s, however long the mallet stays on the hand). A red light flashes at the mortar, and the controllers on both headsets vibrate hard. Bare tracked hands have no vibration.
 
