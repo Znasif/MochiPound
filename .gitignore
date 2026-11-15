@@ -3,3 +3,6 @@ dist/
 .tmp/
 .satie/
 .env*
+# songs are copyrighted: each machine keeps its own in public/music/, never committed
+public/music/*
+!public/music/README.txt
