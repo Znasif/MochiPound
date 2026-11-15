@@ -33,6 +33,9 @@ namespace MoonRabbit.World
         public float tangentJitter = 0.006f;
 
         [Header("Stretched dough (strands, lifted blobs)")]
+        [Tooltip("Hide grains on dough stretched thinner than the surface draws (strands, blobs lifted by the kine), so they " +
+                 "do not float in the air. Off = the earlier look (only grains on torn-off crumbs hide). Takes effect at once.")]
+        public bool hideDetachedRice = true;
         [Tooltip("A grain shrinks away when the particles around its particle drop below this share of what it usually has " +
                  "(dough pulled into a thin strand the surface does not draw), and is fully back above showRatio.")]
         [Range(0f, 1f)] public float thinRatio = 0.4f;
@@ -48,7 +51,7 @@ namespace MoonRabbit.World
         Mesh mesh;
         int[] particle;
         Vector3[] pos, normal, hopOffset, hopVel;
-        float[] yaw, tilt, offset, sizeVar, local, order, attached, usual;
+        float[] yaw, tilt, offset, sizeVar, local, order, attached, stretch, usual;
         Vector2[] jitter;
         Matrix4x4[] matrices;
         MaterialPropertyBlock mpb;
@@ -108,17 +111,19 @@ namespace MoonRabbit.World
                 normal[i] = pos[i] == Vector3.zero ? n : Vector3.Slerp(normal[i], n, follow);
                 pos[i] = pos[i] == Vector3.zero ? p : Vector3.Lerp(pos[i], p, follow);
                 local[i] = Mathf.Max(0f, local[i] - dt * 0.04f);
-                // Grains on torn-off crumbs (few particles around) fade away instead of floating in the air, and so do
-                // grains on dough stretched thinner than the surface draws (a strand or blob pulled up by the kine):
-                // their particle then has far fewer neighbours than it usually does. "Usual" rises at once and relaxes
-                // slowly, so a brief stretch hides the grain while dough that stays flatter shows it again; at rest and
-                // under a press the ratio stays near 1 and nothing changes.
                 if (densityCheck)
                 {
                     int d = link.DensityAt(p);
+                    // grains on torn-off crumbs (few particles around) fade away instead of floating in the air
+                    attached[i] = Mathf.MoveTowards(attached[i], d >= minDensity ? 1f : 0f, dt * 6f);
+                    // hideDetachedRice: so do grains on dough stretched thinner than the surface draws (a strand or blob
+                    // pulled up by the kine): their particle then has far fewer neighbours than it usually does. "Usual"
+                    // rises at once and relaxes slowly, so a brief stretch hides the grain while dough that stays flatter
+                    // shows it again; at rest and under a press the ratio stays near 1 and nothing changes. Tracked even
+                    // while the toggle is off, so switching it shows the difference at once.
                     usual[i] = d >= usual[i] ? d : Mathf.Lerp(usual[i], d, relax);
-                    float want = d < minDensity || p.y > topY ? 0f : Ramp(d / Mathf.Max(1f, usual[i]), thinRatio, showRatio);
-                    attached[i] = Mathf.MoveTowards(attached[i], want, ddt * (want < attached[i] ? hideSpeed : showSpeed));
+                    float want = p.y > topY ? 0f : Ramp(d / Mathf.Max(1f, usual[i]), thinRatio, showRatio);
+                    stretch[i] = Mathf.MoveTowards(stretch[i], want, ddt * (want < stretch[i] ? hideSpeed : showSpeed));
                 }
                 if (hopVel[i] != Vector3.zero)
                 {
@@ -143,7 +148,7 @@ namespace MoonRabbit.World
             {
                 if (order[i] < thinning) continue;
                 float m = Mathf.Clamp01(g + local[i]);
-                float shrink = (1f - Ramp(p, 0.9f, 1f)) * attached[i];
+                float shrink = (1f - Ramp(p, 0.9f, 1f)) * attached[i] * (hideDetachedRice ? stretch[i] : 1f);
                 if (shrink <= 0.01f) continue;
                 float out_ = Mathf.Lerp(offset[i], -0.0015f, Mathf.Pow(m, 1.3f)) - bury * 0.004f;
                 var r = Quaternion.FromToRotation(Vector3.up, normal[i]) * Quaternion.Euler(tilt[i] * (1f - m), yaw[i], 0f);
@@ -203,6 +208,7 @@ namespace MoonRabbit.World
             yaw = new float[n]; tilt = new float[n]; offset = new float[n]; sizeVar = new float[n]; local = new float[n]; order = new float[n];
             jitter = new Vector2[n];
             attached = new float[n];
+            stretch = new float[n];
             usual = new float[n];
 
             const int AZ = 56, EL = 30;
@@ -240,6 +246,7 @@ namespace MoonRabbit.World
                 float ja = (float)rng.NextDouble() * Mathf.PI * 2f, jr = Mathf.Sqrt((float)rng.NextDouble()) * tangentJitter;
                 jitter[i] = new Vector2(Mathf.Cos(ja), Mathf.Sin(ja)) * (i < candidates.Count ? jr * 0.4f : jr);
                 attached[i] = 1f;
+                stretch[i] = 1f;
             }
             assigned = true;
             needAssign = false;
