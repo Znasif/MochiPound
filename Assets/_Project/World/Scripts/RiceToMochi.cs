@@ -32,18 +32,30 @@ namespace MoonRabbit.World
         [Tooltip("Random sideways offset of a grain from its particle (m), so the heap is denser than the surface particles.")]
         public float tangentJitter = 0.006f;
 
+        [Header("Stretched dough (strands, lifted blobs)")]
+        [Tooltip("A grain shrinks away when the particles around its particle drop below this share of what it usually has " +
+                 "(dough pulled into a thin strand the surface does not draw), and is fully back above showRatio.")]
+        [Range(0f, 1f)] public float thinRatio = 0.4f;
+        [Range(0f, 1f)] public float showRatio = 0.62f;
+        [Tooltip("Seconds for a grain's usual density to follow dough that stays thinner (flattened), so grains come back.")]
+        public float usualRelax = 2.5f;
+        [Tooltip("Grains whose particle is this far above the dough's top (m) are hidden (threads on the lifted kine).")]
+        public float aboveTop = 0.03f;
+        [Tooltip("Fade speeds (per second) of the stretched-dough hiding: out fast, back in gently.")]
+        public float hideSpeed = 10f, showSpeed = 3f;
+
         MochiLink link;
         Mesh mesh;
         int[] particle;
         Vector3[] pos, normal, hopOffset, hopVel;
-        float[] yaw, tilt, offset, sizeVar, local, order, attached;
+        float[] yaw, tilt, offset, sizeVar, local, order, attached, usual;
         Vector2[] jitter;
         Matrix4x4[] matrices;
         MaterialPropertyBlock mpb;
         Light warm;
         bool assigned, needAssign = true, hooked;
         int densityVersion = -1;
-        float shownProgress;
+        float shownProgress, sinceDensity;
 
         void Awake()
         {
@@ -78,6 +90,11 @@ namespace MoonRabbit.World
             var P = link.Particles;
             bool densityCheck = link.Version != densityVersion;
             densityVersion = link.Version;
+            sinceDensity += dt;
+            float ddt = sinceDensity;                         // time since the last density update (readbacks skip frames)
+            if (densityCheck) sinceDensity = 0f;
+            float relax = 1f - Mathf.Exp(-ddt / Mathf.Max(0.05f, usualRelax));
+            float topY = link.TopY + aboveTop;
             var c = link.Centroid;
             float follow = 1f - Mathf.Exp(-dt * 40f);
             for (int i = 0; i < grainCount; i++)
@@ -91,8 +108,18 @@ namespace MoonRabbit.World
                 normal[i] = pos[i] == Vector3.zero ? n : Vector3.Slerp(normal[i], n, follow);
                 pos[i] = pos[i] == Vector3.zero ? p : Vector3.Lerp(pos[i], p, follow);
                 local[i] = Mathf.Max(0f, local[i] - dt * 0.04f);
-                // grains on torn-off crumbs (few particles around) fade away instead of floating in the air
-                if (densityCheck) attached[i] = Mathf.MoveTowards(attached[i], link.DensityAt(p) >= minDensity ? 1f : 0f, dt * 6f);
+                // Grains on torn-off crumbs (few particles around) fade away instead of floating in the air, and so do
+                // grains on dough stretched thinner than the surface draws (a strand or blob pulled up by the kine):
+                // their particle then has far fewer neighbours than it usually does. "Usual" rises at once and relaxes
+                // slowly, so a brief stretch hides the grain while dough that stays flatter shows it again; at rest and
+                // under a press the ratio stays near 1 and nothing changes.
+                if (densityCheck)
+                {
+                    int d = link.DensityAt(p);
+                    usual[i] = d >= usual[i] ? d : Mathf.Lerp(usual[i], d, relax);
+                    float want = d < minDensity || p.y > topY ? 0f : Ramp(d / Mathf.Max(1f, usual[i]), thinRatio, showRatio);
+                    attached[i] = Mathf.MoveTowards(attached[i], want, ddt * (want < attached[i] ? hideSpeed : showSpeed));
+                }
                 if (hopVel[i] != Vector3.zero)
                 {
                     hopVel[i] += Physics.gravity * dt;
@@ -176,6 +203,7 @@ namespace MoonRabbit.World
             yaw = new float[n]; tilt = new float[n]; offset = new float[n]; sizeVar = new float[n]; local = new float[n]; order = new float[n];
             jitter = new Vector2[n];
             attached = new float[n];
+            usual = new float[n];
 
             const int AZ = 56, EL = 30;
             var best = new int[AZ * EL * 2];
