@@ -169,6 +169,7 @@ export class DoughSim {
     this.mass = o.rho * this.vol;
     this.mu = o.E / (2 * (1 + o.nu));
     this.la = (o.E * o.nu) / ((1 + o.nu) * (1 - 2 * o.nu));
+    this.youngsModulus = o.E; this.maxDt = o.maxDt;
     const P = o.maxParticles;
     this.x = new Float64Array(P * 3); this.v = new Float64Array(P * 3);
     this.C = new Float64Array(P * 9); this.F = new Float64Array(P * 9);
@@ -322,11 +323,23 @@ export class DoughSim {
     return d - this.rp;
   }
 
+  setYoungsModulus(E) {
+    if (!(E > 0) || !Number.isFinite(E)) return false;
+    this.youngsModulus = E;
+    this.mu = E / (2 * (1 + this.o.nu));
+    this.la = E * this.o.nu / ((1 + this.o.nu) * (1 - 2 * this.o.nu));
+    // Numerical stability follows wave speed. This is a timestep limit, not another material sweep.
+    this.maxDt = this.o.maxDt * Math.min(1, Math.sqrt(this.o.E / E));
+    return true;
+  }
+
   // ---------- one rendered frame of simulated time ----------
   step(frameDt, tools = []) {
     if (frameDt <= 0) return;
     const o = this.o;
-    const nsub = Math.min(o.maxSubsteps, Math.max(1, Math.ceil(frameDt / o.maxDt)));
+    frameDt = Math.min(frameDt, o.maxSubsteps * this.maxDt);
+    this.lastSimDt = frameDt;
+    const nsub = Math.min(o.maxSubsteps, Math.max(1, Math.ceil(frameDt / this.maxDt)));
     const dt = frameDt / nsub;
     this.lastSubsteps = nsub;
     this.setTools(tools, frameDt);

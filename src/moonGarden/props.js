@@ -116,6 +116,10 @@ export function loadGardenProps({ parent, placements, base, paperGlow, fireflyGl
     pivot.add(mirror);
     parent.add(pivot);
     pivots[id] = { pivot, mirror, basePosition: pl.position.clone(), baseQuaternion: pl.quaternion.clone() };
+    if (id === 'chime' || id === 'fountain') {
+      const anchor = new THREE.Object3D(); anchor.name = `MR_Audio_${id}`; anchor.userData.audioReady = false;
+      mirror.add(anchor); pivots[id].audioAnchor = anchor;
+    }
 
     const file = FILES[id];
     const done = (object, mtl) => {
@@ -139,6 +143,15 @@ export function loadGardenProps({ parent, placements, base, paperGlow, fireflyGl
         mesh.receiveShadow = true; // Unity: cast Off, receive on
         mirror.add(mesh);
         if (k === 'Amber_paper' && id === 'lanternStand') onPaperPoints?.(paperCentres(geo, pivots[id]));
+      }
+      const anchor = pivots[id].audioAnchor;
+      if (anchor) {
+        mirror.updateWorldMatrix(true, true);
+        const bounds = new THREE.Box3().setFromObject(mirror);
+        if (!bounds.isEmpty()) {
+          anchor.position.copy(mirror.worldToLocal(bounds.getCenter(new THREE.Vector3())));
+          anchor.userData.audioReady = true;
+        }
       }
     };
     const fail = (err) => console.warn(`[moonGarden] ${file} failed to load; the garden goes on without it`, err);

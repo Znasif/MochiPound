@@ -217,7 +217,6 @@
           <span id="vr-slot"></span>
           <button class="mochi goma" data-panel="worlds">Worlds <span class="value" id="v-worlds"></span></button>
           <button class="mochi sakura" data-panel="players">Players <span class="value" id="v-players"></span></button>
-          <button class="mochi yomogi" data-panel="music" id="menu-music">Music <span class="value" id="v-music"></span></button>
           <button class="mochi" data-panel="settings">Settings <span class="value" id="v-settings"></span></button>
           <button class="mochi kinako" data-panel="howto">How to play</button>
         </nav>
@@ -308,42 +307,26 @@
           <section class="panel hidden" id="panel-players" aria-label="Players">
             <button class="icon close" data-close aria-label="Close">&#x2715;</button>
             <h2>Players</h2>
-            <p class="lead">One headset, or two in the same room: one hosts (holds the mallet and keeps the batch's time), the other joins and kneads with their hands.</p>
+            <p class="lead">One headset, or two in the same room. Either person can pick up the mallet or knead; whoever holds the mallet pounds. One headset hosts (it runs the dough and the music clock), the other joins.</p>
             <div class="cards" data-cards-for="mp-role"></div>
             <select id="mp-role" class="hidden" aria-label="Players">
               <option value="solo">Play alone</option>
-              <option value="host">Two headsets: host (pound; runs the dough)</option>
-              <option value="join">Two headsets: join (knead the host's dough)</option>
+              <option value="host">Two headsets: host</option>
+              <option value="join">Two headsets: join</option>
             </select>
-          </section>
-
-          <section class="panel hidden" id="panel-music" aria-label="Music">
-            <button class="icon close" data-close aria-label="Close">&#x2715;</button>
-            <h2>Music</h2>
-            <p class="lead">Pound to your own song: its beats are found automatically, and it starts when you enter.</p>
-            <div class="rhythm" id="rhythm-box">
-              <div class="field">
-                <label class="cap" for="song">SONG</label>
-                <select id="song" aria-label="Song"><option value="">No music (free play)</option></select>
-              </div>
-              <div class="field row">
-                <label class="filebtn">Choose a song file…<input type="file" id="songfile" accept="audio/*" hidden /></label>
-              </div>
-              <div class="field">
-                <label class="cap" for="density">STRIKE ON</label>
-                <select id="density" aria-label="Strike on">
-                  <option value="auto">Auto pace</option>
-                  <option value="2">Every other beat</option>
-                  <option value="1">Every beat</option>
-                </select>
-              </div>
-              <div id="rhythm-status">Pick a song and it starts when you enter (on screen or in VR). Its beats are found automatically.</div>
-            </div>
           </section>
 
           <section class="panel hidden" id="panel-settings" aria-label="Settings">
             <button class="icon close" data-close aria-label="Close">&#x2715;</button>
             <h2>Settings</h2>
+            <div class="field">
+              <label class="cap" for="vr-movement">VR MOVEMENT</label>
+              <select id="vr-movement" aria-label="VR movement">
+                <option value="sticks">Thumbsticks + physical movement</option>
+                <option value="room">Room scale (walk physically)</option>
+              </select>
+              <p class="note">Room scale places you by the mortar once. Walk, lean and crouch within your headset’s play area; changing hands or grabbing the mallet keeps your position.</p>
+            </div>
             <p class="lead">Dough quality: finer dough looks and feels better but costs more; on a Quest the richer levels run in slow motion.</p>
             <div class="cards" data-cards-for="dough-quality"></div>
             <select id="dough-quality" class="hidden" aria-label="Dough quality"><option value="">Dough: automatic (what this device can run)</option></select>
@@ -358,8 +341,9 @@
               <b>Mouse / WASD</b><span>look and walk (Shift to hurry)</span>
               <b>E</b><span>take the kine (mallet) at the mortar, or give it back</span>
               <b>Click / Space</b><span>strike. Wait until hands are out of the bowl</span>
-              <b>VR</b><span>left stick walks, right stick turns. Grip at the mortar takes the kine; swing it down for real</span>
+              <b>VR</b><span>walk, lean and crouch in your play area. Grip near the mortar takes the kine; swing it down for real. Optional thumbstick movement is in Settings</span>
               <b>VR hands</b><span>put the controllers down to knead the dough with your own hands</span>
+              <b>Song scrolls</b><span>either player can choose or change the music: look + E, reach + select, or pinch near a scroll</span>
               <b>Esc</b><span>back to this menu</span>
             </div>
           </section>
@@ -376,6 +360,7 @@
     </div>
     <div id="prompt"></div>
     <div id="rhud" class="meter hidden">
+      <div class="label" id="rsong"></div>
       <div class="label"><span>Score</span><span id="rmult">×1</span></div>
       <div class="score" id="rscore">0</div>
       <div class="label"><span id="rcombo">combo 0</span><span id="rcal"></span></div>

@@ -20,29 +20,42 @@
 const SOUND_API = ['playIntroLine', 'playScrollUnroll', 'playScrollClose', 'playSwell', 'playFireworkFar', 'stopTextSounds',
   'playEndingText', 'playFlight', 'playArrival', 'playWishes', 'update'];
 
-async function load(path, name) {
-  try { return await import(/* @vite-ignore */ path); }
+async function load(importer, name) {
+  try { return await importer(); }
   catch (err) { console.warn(`[story] ${name} unavailable:`, err.message); return null; }
 }
 
 export async function createMoonStory(ctx) {
   const silent = Object.fromEntries(SOUND_API.map((k) => [k, () => {}]));
-  const soundsMod = await load(new URL('./sounds.js', import.meta.url).href, 'sounds');
+  const soundsMod = await load(() => import('./sounds.js'), 'sounds');
   let sounds = silent;
   try { if (soundsMod?.createStorySounds) sounds = { ...silent, ...soundsMod.createStorySounds(ctx) }; }
   catch (err) { console.error('[story] sounds failed; running the story silent', err); }
-  const pctx = Object.assign(Object.create(ctx), { sounds }); // not a spread: ctx's getters (audioContext, entered) stay live
+  const textMod = await load(() => import('./text.js'), 'text');
+  await textMod?.loadStoryFonts?.();
+  const flow = { introActive: false, intro: null, ending: null };
+  const pctx = Object.assign(Object.create(ctx), { sounds, flow }); // preserve the live audioContext / entered getters
   const parts = [];
-  for (const [file, name, factory] of [['./ending.js', 'ending', 'createEnding'], ['./songScrolls.js', 'song scrolls', 'createSongScrolls'], ['./intro.js', 'intro', 'createIntro']]) {
-    const m = await load(new URL(file, import.meta.url).href, name);
+  let started = false;
+  // Literal imports let Vite include every independently guarded part in production builds as well.
+  for (const [importer, name, factory, key] of [
+    [() => import('./ending.js'), 'ending', 'createEnding', 'ending'],
+    [() => import('./songScrolls.js'), 'song scrolls', 'createSongScrolls', 'songScrolls'],
+    [() => import('./intro.js'), 'intro', 'createIntro', 'intro'],
+  ]) {
+    const m = await load(importer, name);
     if (!m?.[factory]) continue;
-    try { const part = await m[factory](pctx); if (part) { part.name = name; parts.push(part); } }
+    try { const part = await m[factory](pctx); if (part) { part.name = name; parts.push(part); flow[key] = part; } }
     catch (err) { console.error(`[story] ${name} failed to start`, err); }
   }
+  flow.ending?.onReset(() => flow.intro?.restart());
   console.info(`[story] parts: ${parts.map((p) => p.name).join(', ') || 'none'}`);
   return {
-    enter(xr) { for (const p of parts) { try { p.enter?.(xr); } catch (err) { console.error(`[story] ${p.name} enter`, err); } } },
-    use(c) { for (const p of parts) { try { if (p.use?.(c)) return true; } catch (err) { console.error(`[story] ${p.name} use`, err); } } return false; },
+    get started() { return started; },
+    get blocked() { return flow.introActive; },
+    get reveal() { return flow.intro?.reveal ?? 1; },
+    enter(xr) { started = true; for (const p of parts) { try { p.enter?.(xr); } catch (err) { console.error(`[story] ${p.name} enter`, err); } } },
+    use(c) { for (let i = parts.length - 1; i >= 0; i--) { const p = parts[i]; try { if (p.use?.(c)) return true; } catch (err) { console.error(`[story] ${p.name} use`, err); } } return false; },
     update(dt, t) {
       sounds.update?.(dt, t);
       for (const p of parts) { try { p.update?.(dt, t); } catch (err) { if (!p._warned) { p._warned = true; console.error(`[story] ${p.name} update`, err); } } }

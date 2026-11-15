@@ -3,7 +3,9 @@ import * as L from './layout.js';
 import { woodTexture, riceTexture } from './textures.js';
 import { createDough } from './dough/dough.js';
 import { createKineContact } from './kineContact.js';
-import { makeUsu, makeKine, usuShape } from './props.js';
+import { makeUsu, usuShape } from './props.js';
+import { MALLETS, makeSongMallet } from './moonGarden/story/mallets.js';
+import { createConditioning } from './dough/conditioning.js';
 
 // The pounding station: the usu, the kine, the dough and the hand-water bucket, nothing else (2026-11-15,
 // the user's call when the Moon garden replaced the shrine courtyard: no NPC pounder, no rice carrier,
@@ -38,6 +40,7 @@ export function createStation(scene) {
   let hands = null; // tracked hands (src/hands.js), set by setHands
   const listeners = {};
   const emit = (name, data) => { for (const fn of listeners[name] ?? []) fn(data); };
+  const conditioning = createConditioning();
   // multiplayer guest (src/sync.js): runs everything itself, but starts each batch phase when the host does
   let follower = false, hostPhase = null, hostPhaseAt = 0;
   const root = new THREE.Group();
@@ -80,6 +83,13 @@ export function createStation(scene) {
   // the simulated dough (MPM, in a worker) inside the mortar's carved bowl
   // (its mortar is the exact one drawn above, read back from the meshes, as the mallet's collision is)
   const dough = createDough(scene, { usu: usuShape(usu), map: riceMat.map });
+  // Conditioning sweeps exactly one material parameter, Young's modulus (the user's call, 2026-11-15).
+  // Moisture is a gameplay meter: it only decides whether elasticity is gained or lost. The dough's
+  // wetness (tack and hand friction) stays the bucket dip's, as before: a dip wets it, strikes work it in.
+  function applyMaterialState() {
+    dough.setYoungsModulus(conditioning.youngsModulus);
+  }
+  applyMaterialState();
   const DOUGH_RADIUS = 0.14; // ~11 L of steamed rice
   const DOUGH_SPAWN_Y = 1.06; // the stand-in becomes simulated dough once it falls inside the simulation box
   const doughTop = () => dough.stats.topY ?? L.MOCHI_TOP_Y;
@@ -106,7 +116,15 @@ export function createStation(scene) {
 
   // ---------- kine (mallet) ----------
   const kineWood = new THREE.MeshStandardMaterial({ map: woodTexture({ base: '#b88a5a', dark: '#7a5432', seed: 17 }), roughness: 0.7 });
-  let kine = makeKine(L.KINE_LENGTH, { wood: kineWood, band: new THREE.MeshStandardMaterial({ color: 0x3a2a1c, roughness: 0.6 }) });
+  const assetMaterials = {
+    wood: kineWood,
+    band: new THREE.MeshStandardMaterial({ color: 0xbda477, roughness: 0.8 }),
+    log: new THREE.MeshStandardMaterial({ color: 0x795034, roughness: 0.9 }),
+    wrap: new THREE.MeshStandardMaterial({ color: 0xd78894, roughness: 0.9 }),
+  };
+  const initialAsset = makeSongMallet('yokogine', assetMaterials);
+  let kine = initialAsset.object3d, kineAssetId = 'yokogine';
+  const kineAssets = new Map([[kineAssetId, initialAsset]]);
   // the current mallet's head (the dough feels it as this cylinder; its bottom cap is the striking face), its
   // hold in a VR hand, and optional custom poses (setKine: the Moon garden's song scrolls swap mallets)
   let kineHead = kine.getObjectByName('kine-head');
@@ -127,7 +145,7 @@ export function createStation(scene) {
   // outer edge inward, up to one mallet-head height above it
   const shape = usuShape(usu);
   const rimR = Math.max(...shape.poly.filter((q) => q[1] >= Math.max(...shape.poly.map((p) => p[1])) - 1e-9).map((q) => q[0]));
-  const zoneTop = shape.top + 2 * doughTools[0].h;
+  let zoneTop = shape.top + 2 * doughTools[0].h;
   const inZone = (p) => Math.hypot(p.x - shape.x, p.z - shape.z) < rimR && p.y < zoneTop;
   const pivotStrike = v3(L.KINE_PIVOT_STRIKE), pivotRaised = v3(L.KINE_PIVOT_RAISED);
   let kineLift = 0.45; // 0 = head on the dough, 1 = fully raised
@@ -168,9 +186,12 @@ export function createStation(scene) {
     next.position.copy(prev.position); next.quaternion.copy(prev.quaternion);
     parent.add(next); prev.removeFromParent();
     kine = next;
+    kineAssetId = opts.assetId ?? next.userData.assetId ?? null;
+    kine.userData.assetId = kineAssetId;
     kineHead = next.getObjectByName('kine-head');
     const P = kineHead.geometry.parameters;
     doughTools[0].r = Math.max(P.radiusTop, P.radiusBottom); doughTools[0].h = P.height / 2;
+    zoneTop = shape.top + P.height;
     kineHead.updateMatrix();
     kineHeadBottom.set(0, -P.height / 2, 0).applyMatrix4(kineHead.matrix); // the face's centre, kine-local
     gripPos.copy(opts.grip?.position ?? new THREE.Vector3(0, -0.02, 0.06));
@@ -180,14 +201,27 @@ export function createStation(scene) {
     if (st.vr.grip) { kine.position.copy(gripPos); kine.rotation.copy(gripRot); }
     else if (st.mode === 'idle') restPose();
     else poseKine(kineLift);
+    st.swing = null; st.vr.ready = false;
+    if (st.mode === 'remote') { st.remoteKine = null; st._remoteEased = false; }
     kineContact.reset();
+    emit('kine-asset', { assetId: kineAssetId });
     return prev;
+  }
+
+  // Stable catalog IDs cross the network; meshes, materials, grips and colliders are built locally.
+  function setKineAsset(assetId) {
+    if (!MALLETS.some((m) => m.id === assetId)) return false;
+    if (kineAssetId === assetId) return true;
+    let asset = kineAssets.get(assetId);
+    if (!asset) { asset = makeSongMallet(assetId, assetMaterials); kineAssets.set(assetId, asset); }
+    setKine(asset.object3d, asset.options);
+    return true;
   }
 
   // An ending (the Moon garden's: the mochi flies to the Earth, src/moonGarden/story/) takes over the done
   // phase from the plain float-away: { begin(from: Vector3), done: boolean }. begin is called once the dough
   // is lifted out (1.2 s after the last strike), with the dough's centre; the next batch waits for done.
-  let ending = null;
+  let ending = null, storyBlocked = false;
 
   // ---------- oke (hand-water bucket) ----------
   const oke = new THREE.Group();
@@ -253,16 +287,33 @@ export function createStation(scene) {
   };
   const tmp = new THREE.Vector3();
   const riceFrom = new THREE.Vector3(L.USU.position[0], RICE_FROM_Y, L.USU.position[2]);
+  let lastHandHit = -Infinity, handHitSequence = 0;
+  const receivedHits = new Set();
+
+  function recordSuccessfulAction(event) {
+    if (follower || storyBlocked || st.phase !== 'pound' || !conditioning.reward(event)) return false;
+    applyMaterialState(); emit('conditioning', conditioning.snapshot());
+    return true;
+  }
+  function freePlaySuccess(action) {
+    recordSuccessfulAction({ action, epoch: conditioning.snapshot().epoch, id: `physical:${Math.floor(st.clock * 10)}`, kind: 'good' });
+  }
+  function reportHandHit() {
+    if (follower || storyBlocked || st.phase !== 'pound' || st.mode === 'idle' || st.clock - lastHandHit < 0.65) return;
+    lastHandHit = st.clock;
+    emit('hand-hit', { id: `${conditioning.snapshot().epoch}:${++handHitSequence}`, epoch: conditioning.snapshot().epoch });
+  }
 
   // ---------- strike handling (shared by desktop, VR and the other headset) ----------
   function contact(by, strength = 1) {
-    if (st.phase !== 'pound') return;
+    if (storyBlocked || st.phase !== 'pound') return;
     const interval = st.clock - st.lastStrikeAt;
     const rushed = st.handsIn;
     st.lastStrikeAt = st.clock;
     // fire first, then move the signal the strike changes (the event reads the signal as it fires)
     emit('pound', { by, strength, rushed, interval, progress: st.progress });
     dough.setWetness(dough.wetness * 0.6); // the water from the last dip is worked in
+    if (!st.rhythm && !rushed) freePlaySuccess('strike');
     st.strikes += rushed ? 0.5 : 1;
     st.progress = clamp01(st.strikes / L.POUNDING.strikesPerBatch);
     shapeDough(st.progress);
@@ -289,7 +340,10 @@ export function createStation(scene) {
       const d = dough.densityAt(h.palm);
       if (!sl.inside && d >= 0.5) {
         sl.inside = true;
-        if (h.palmSpeed >= 0.3 && st.phase === 'pound') emit('turn', { hand: h.i, speed: h.palmSpeed });
+        if (h.palmSpeed >= 0.3 && st.phase === 'pound' && !storyBlocked) {
+          emit('turn', { hand: h.i, speed: h.palmSpeed });
+          if (!st.rhythm) freePlaySuccess('knead');
+        }
       } else if (sl.inside && d < 0.25) sl.inside = false;
     }
     // a hand in the bucket's water wets the hands, and the dough they work (dip)
@@ -297,7 +351,11 @@ export function createStation(scene) {
     for (const sp of hands.spheres) {
       if (Math.hypot(sp.center.x - okeWater.x, sp.center.z - okeWater.z) < okeR && sp.center.y < okeWater.y) { wet = true; break; }
     }
-    if (wet && !st.dipping) { emit('dip'); dough.setWetness(1); }
+    if (wet && !st.dipping) {
+      emit('dip');
+      dough.setWetness(1);
+      if (!follower && st.phase === 'pound') { conditioning.water(); applyMaterialState(); emit('conditioning', conditioning.snapshot()); }
+    }
     st.dipping = wet;
   }
 
@@ -310,6 +368,7 @@ export function createStation(scene) {
     if (st.phase === 'load') updateLoad(dt);
     else if (st.phase === 'pound') updatePound(dt);
     else if (st.phase === 'done') updateDone(dt);
+    if (!follower && !storyBlocked && st.phase === 'pound') { conditioning.update(dt); applyMaterialState(); }
 
     // the kine against the mortar, the ground and the tracked hands' joints; in VR it starts from where
     // the controller holds it each frame, so a blocked swing springs back to the hand once clear
@@ -323,7 +382,7 @@ export function createStation(scene) {
       else { const a = 1 - Math.exp(-dt * 25); kine.position.lerp(tmp, a); kine.quaternion.slerp(remoteQ, a); }
     }
     const knock = kineContact.resolve(kine, hands ? hands.spheres : [], dt);
-    if (knock) emit('kine_contact', knock);
+    if (knock) { if (knock.kind === 'hand') reportHandHit(); emit('kine_contact', knock); }
     if (st.mode === 'remote' && st.remoteKine && st.phase === 'pound') swingStrike(dt, 'remote');
 
     feedDough(dt);
@@ -388,7 +447,7 @@ export function createStation(scene) {
         mochi.position.y -= 4.9 * st._fall * st._fall;
         if (mochi.position.y <= DOUGH_SPAWN_Y) {
           const at = mochi.position.clone().setY(DOUGH_SPAWN_Y);
-          dough.setWetness(0);
+          dough.setWetness(0); applyMaterialState();
           // a guest whose dough the host's already arrived in (the host got here first) doesn't add a second
           if (!(follower && dough.stats.count > 0)) dough.spawn(at, DOUGH_RADIUS, [0, -9.8 * st._fall, 0]);
           mochi.visible = false;
@@ -456,7 +515,7 @@ export function createStation(scene) {
     if (mode === 'idle') poseRest();
   }
   function desktopSwing() {
-    if (st.mode !== 'desktop' || st.phase !== 'pound' || st.swing) return false;
+    if (storyBlocked || st.mode !== 'desktop' || st.phase !== 'pound' || st.swing) return false;
     if (kineLift < 0.55) return false; // still lifting from the last strike
     st.swing = { t: 0, from: kineLift, stage: 'down' };
     return true;
@@ -502,6 +561,7 @@ export function createStation(scene) {
   // ---------- multiplayer: the host is the clock for the batch phases (src/sync.js) ----------
   const r4 = (v) => Math.round(v * 1e4) / 1e4;
   function enterLoad() {
+    if (!follower) { conditioning.reset(); applyMaterialState(); emit('conditioning', conditioning.snapshot()); }
     st.phase = 'load'; st.t = 0; st.step = 0; st._fall = null; st._land = null; st._dropped = false; st._lifted = false; st._ending = null;
   }
   function enterPound() {
@@ -514,7 +574,7 @@ export function createStation(scene) {
     if (st.phase === 'load') {
       mochi.visible = false; st._fall = null; st._land = null;
       if (phase !== 'load' && dough.stats.count === 0) { // the rice it would have dropped
-        dough.setWetness(0);
+        dough.setWetness(0); applyMaterialState();
         dough.spawn(doughRest.clone().setY(DOUGH_SPAWN_Y), DOUGH_RADIUS, [0, 0, 0]);
         st.progress = 0; st.strikes = 0; shapeDough(0); dough.setProgress(0);
       }
@@ -544,6 +604,16 @@ export function createStation(scene) {
     on(name, fn) { (listeners[name] ??= []).push(fn); },
     // multiplayer (src/sync.js). Guest: start each batch phase when the host does (the host emits 'phase').
     setFollower(v) { follower = v; },
+    get conditioning() { return conditioning.snapshot(); },
+    recordSuccessfulAction,
+    applyConditioning(state) { if (follower && conditioning.apply(state)) applyMaterialState(); },
+    reportHandHit,
+    receiveHandHit(event) {
+      if (!follower || !event || typeof event.id !== 'string' || event.epoch < conditioning.snapshot().epoch || receivedHits.has(event.id)) return;
+      receivedHits.add(event.id);
+      if (receivedHits.size > 256) receivedHits.delete(receivedHits.values().next().value);
+      emit('hand-hit', event);
+    },
     followPhase(phase) { if (phase !== hostPhase) { hostPhase = phase; hostPhaseAt = st.clock; } },
     // the kine held in the other headset's hand (its pose, or null), and where this headset holds it (to send)
     setRemoteKine(pose) { st.remoteKine = pose; if (!pose) st._remoteEased = false; },
@@ -561,7 +631,10 @@ export function createStation(scene) {
     updateVR,
     setMode, desktopSwing, attachToGrip, detachFromGrip,
     setKine, // swap the mallet (see setKine above)
+    setKineAsset,
+    get kineAssetId() { return kineAssetId; },
     setEnding(e) { ending = e; }, // an ending for the done phase (see above), or null for the float-away
+    setStoryBlocked(v) { storyBlocked = !!v; if (v) { st.swing = null; st.vr.ready = false; } },
     get kine() { return kine; },
     // rhythm mode: { time(), nextStrike(t), prevStrike(t) } or null
     setRhythm(provider) {

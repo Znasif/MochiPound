@@ -268,7 +268,8 @@ export function createKineContact({ kine, usu, ground = null }) {
     else ends.push(new THREE.Vector3(pt.R + pt.t, 0, 0).applyMatrix4(pt.m));
   }
   const e0 = new THREE.Vector3(), e1 = new THREE.Vector3(), mp = new THREE.Vector3(), mq = new THREE.Quaternion(), cp = new THREE.Vector3();
-  let hasPrev = false, inContact = false, lastKind = 'usu';
+  let hasPrev = false, inContact = false, lastKind = 'usu', handTouched = false, hadHandContact = false;
+  const handPoint = new THREE.Vector3(), handNormal = new THREE.Vector3();
 
   // a contact's own distance (>= 0 = clear) with the mallet moved by s: rotated about the grip by s rad
   // around `ax`, or pushed along `dir` by s m
@@ -293,6 +294,9 @@ export function createKineContact({ kine, usu, ground = null }) {
       const h = deepest(pos, quat, hands, it === 0);
       if (!h) break;
       touched = true; lastKind = h.kind; lastN.copy(h.n); lastPoint.copy(h.point);
+      for (let i = 0; i < nContacts; i++) if (pool[i].kind === 'hand') {
+        handTouched = true; handPoint.copy(pool[i].point); handNormal.copy(pool[i].n); break;
+      }
       sumN.set(0, 0, 0); sumP.set(0, 0, 0);
       let w = 0;
       for (let i = 0; i < nContacts; i++) { const c = pool[i]; sumN.addScaledVector(c.n, c.pen); sumP.addScaledVector(c.point, c.pen); w += c.pen; }
@@ -324,6 +328,7 @@ export function createKineContact({ kine, usu, ground = null }) {
     // Resolves `kine` (posed for this frame) in place. hands: spheres to keep out of ({ center, r } or meshes).
     // Returns { kind: 'usu' | 'ground' | 'hand', speed } when a contact starts while moving, else null.
     resolve(kineObj, hands, dt) {
+      handTouched = false;
       kineObj.updateMatrixWorld(true);
       kineObj.matrixWorld.decompose(tPos, tQuat, tScale);
       const handMoved = hasPrev ? tPos.distanceTo(prevTarget) : 0;
@@ -355,20 +360,21 @@ export function createKineContact({ kine, usu, ground = null }) {
         if (kineObj.parent) { kineObj.parent.updateMatrixWorld(true); m4.premultiply(inv.copy(kineObj.parent.matrixWorld).invert()); }
         m4.decompose(kineObj.position, kineObj.quaternion, kineObj.scale);
         kineObj.updateMatrixWorld(true);
-        if (!inContact && hasPrev) {
+        if ((!inContact || (handTouched && !hadHandContact)) && hasPrev) {
           // how fast the contact point was coming at the surface (last frame's resolved pose -> this frame's target)
-          const body = lastPoint.clone().sub(pos).applyQuaternion(quat.clone().invert());
+          const body = (handTouched ? handPoint : lastPoint).clone().sub(pos).applyQuaternion(quat.clone().invert());
           const before = body.clone().applyQuaternion(prevQuat).add(prevPos), after = body.clone().applyQuaternion(tQuat).add(tPos);
-          const speed = Math.max(0, -after.sub(before).dot(lastN)) / Math.max(dt, 1e-3);
-          if (speed > 0) event = { kind: lastKind, speed };
+          const speed = Math.max(0, -after.sub(before).dot(handTouched ? handNormal : lastN)) / Math.max(dt, 1e-3);
+          if (speed > 0) event = { kind: handTouched ? 'hand' : lastKind, speed };
         }
       }
       inContact = touched;
+      hadHandContact = handTouched;
       prevPos.copy(pos); prevQuat.copy(quat); prevTarget.copy(tPos);
       hasPrev = true;
       return event;
     },
-    reset() { hasPrev = false; inContact = false; },
+    reset() { hasPrev = false; inContact = hadHandContact = false; },
     // exact distances, for tests: to the mortar + ground, and to the mallet as it is posed now
     sceneSdf: (p) => sceneSdf(p, null),
     stats,

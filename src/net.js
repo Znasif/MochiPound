@@ -1,11 +1,11 @@
-// Multiplayer link (2026-11-15): two headsets on the same dev server, one pounding and one kneading.
+// Multiplayer link (2026-11-15): two headsets on the same dev server; either one pounds or kneads.
 // Messages go through the relay in vite.config.js over Vite's own WebSocket (the one hot reload uses), so
 // there is no extra server or package; it works wherever the dev server is reachable, which for a Quest
 // means http://localhost:5174 through `adb reverse` (USB or adb over Wi-Fi). Dev server only.
 //
 // Roles (the start screen's menu, kept in the URL as ?mp=host or ?mp=join):
-//   host  runs everything as in solo play (the batch, the dough, the NPCs, the mallet) and sends it out
-//   join  the guest: draws what the host sends and kneads the host's dough with its tracked hands
+//   host  runs everything as in solo play (the batch, the dough, the music clock) and decides who holds the kine
+//   join  the guest: follows the host's batch, eases its dough toward the host's, and can knead or ask for the kine
 // What is sent is in src/sync.js.
 
 export const ROLES = ['solo', 'host', 'join'];

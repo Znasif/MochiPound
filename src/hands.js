@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { HAND_VISUAL_SCALE, createControllerPaw } from './pawVisual.js';
 
 // Tracked hands (WebXR hand input: the Quest's hand tracking, controllers put down). They replace the
 // kneeling turner NPC: a real person kneads the dough. Each hand is drawn from its tracked joints (a
@@ -31,10 +32,10 @@ export const HAND = { tack: 0, friction: 1, mould: 0 };
 const REMOTE_TIMEOUT = 0.5; // s without news before the other headset's hand counts as gone
 
 // scene: where the drawn hands go (they are posed in world coordinates)
-export function createHands(renderer, rig, scene) {
+export function createHands(renderer, rig, scene, controllers = []) {
   const dir = new THREE.Vector3();
-  const skin = new THREE.MeshStandardMaterial({ color: 0xe2b896, roughness: 0.6, metalness: 0 });
-  const otherSkin = new THREE.MeshStandardMaterial({ color: 0xc89878, roughness: 0.6, metalness: 0 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xefdec5, roughness: 0.8, metalness: 0 });
+  const otherSkin = new THREE.MeshStandardMaterial({ color: 0xefdec5, roughness: 0.8, metalness: 0 });
   const ballGeo = new THREE.SphereGeometry(1, 14, 10), tubeGeo = new THREE.CylinderGeometry(1, 1, 1, 12, 1, true);
   const m4 = new THREE.Matrix4(), sc = new THREE.Vector3(), q0 = new THREE.Quaternion();
 
@@ -73,6 +74,10 @@ export function createHands(renderer, rig, scene) {
   });
   const remote = [2, 3].map((i) => slot(i, true));
   const all = [...local, ...remote];
+  const controllerPaws = controllers.map((controller) => {
+    const mesh = createControllerPaw('left'); controller.grip.add(mesh);
+    return { controller, mesh };
+  });
 
   // build a slot's colliders and drawing from its joints (h.joints)
   function build(h, dt) {
@@ -106,9 +111,9 @@ export function createHands(renderer, rig, scene) {
     }
     h.fresh = false;
     // draw it: the joints and bones just computed
-    for (let k = 0; k < h.spheres.length; k++) { const s2 = h.spheres[k]; h.balls.setMatrixAt(k, m4.compose(s2.center, q0, sc.setScalar(s2.r))); }
+    for (let k = 0; k < h.spheres.length; k++) { const s2 = h.spheres[k]; h.balls.setMatrixAt(k, m4.compose(s2.center, q0, sc.setScalar(s2.r * HAND_VISUAL_SCALE))); }
     h.balls.count = h.spheres.length;
-    for (let k = 0; k < h.tools.length; k++) { const t = h.tools[k]; h.tubes.setMatrixAt(k, m4.compose(t.center, t.quat, sc.set(t.r, 2 * t.h, t.r))); }
+    for (let k = 0; k < h.tools.length; k++) { const t = h.tools[k]; h.tubes.setMatrixAt(k, m4.compose(t.center, t.quat, sc.set(t.r * HAND_VISUAL_SCALE, 2 * t.h, t.r * HAND_VISUAL_SCALE))); }
     h.tubes.count = h.tools.length;
     h.balls.instanceMatrix.needsUpdate = h.tubes.instanceMatrix.needsUpdate = true;
     h.balls.visible = h.tubes.visible = true;
@@ -158,6 +163,11 @@ export function createHands(renderer, rig, scene) {
         build(h, dt);
       }
       for (const h of all) if (h.tracked) { for (const s of h.spheres) this.spheres.push(s); for (const t of h.tools) this.tools.push(t); }
+      for (const { controller: c, mesh } of controllerPaws) {
+        mesh.visible = renderer.xr.isPresenting && !!c.source && !c.source.hand
+          && !local.some((h) => h.tracked && h.handedness === c.handedness);
+        mesh.scale.x = HAND_VISUAL_SCALE * (c.handedness === 'right' ? -1 : 1);
+      }
     },
     // this headset's hands for sending: per hand, the joints as x, y, z, radius in JOINTS order (NaN = not
     // tracked), or null

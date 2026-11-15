@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { toB64, fromB64 } from './net.js';
+import { createRabbitAvatar } from './rabbitAvatar.js';
 
 // Two headsets in one scene, sharing as little as possible (2026-11-15, the user's choice): each headset
 // runs everything itself (the batch, its own dough, the sounds,
@@ -12,53 +13,19 @@ import { toB64, fromB64 } from './net.js';
 //   host   'phase'         the batch phase (load, pound, done) on every change and once a second: the guest
 //                          plays each phase itself and starts the next when the host does (station.followPhase)
 //   guest  'kine-take', 'kine-drop'; host 'kine-grant' {ok}, 'kine-revoked'
-//                          one kine, one holder: the host decides who
+//                          one kine, one holder: the host decides who. Either person can hold it (VR grip or
+//                          desktop E); whoever doesn't, kneads
+//   host   'kine-asset'    stable mallet asset ID on change and once a second, also included in poses
+//                          and ownership grants, so late joins and held-tool colliders use the same asset
 //   host   'dough'  ~12/s  the host's dough particles (16-bit positions and velocities, ~6 KB on the headset's
 //                          tier): the dough is the host's. The guest keeps simulating its own copy, so this
 //                          person's hands act on it at once, and eases its particles toward the host's
 //                          (dough.applySnapshot), so both see the same lump. Both build the dough the same way
 //                          (the guest takes the host's tier), so particle i is the same bit of dough on both
-// Music in rhythm mode plays on the host's headset only.
+// src/musicSync.js shares the host's music clock and song; the guest cues kneads between host strikes.
 
 const POSE_DT = 1 / 45, DOUGH_DT = 1 / 12;
 const DOUGH_EASE = 0.35; // share of the way to the host's particles per update (~0.25 s to agree)
-const STALE = 2.5; // s without news before the other headset counts as gone
-
-// the other person: a head with a visor where their headset is, and a body down to the ground
-function createAvatar(scene) {
-  const g = new THREE.Group();
-  g.name = 'other-player';
-  const skin = new THREE.MeshStandardMaterial({ color: 0xd7b08c, roughness: 0.7 });
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 18, 12), skin);
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.07, 0.08), new THREE.MeshStandardMaterial({ color: 0x1b1d22, roughness: 0.3 }));
-  visor.position.set(0, 0.01, -0.09); // the headset looks along -Z
-  head.add(visor);
-  g.add(head);
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 1, 12), new THREE.MeshStandardMaterial({ color: 0x5a4a6a, roughness: 0.8 }));
-  scene.add(g, body);
-  g.visible = body.visible = false;
-  let seen = -Infinity;
-  const tp = new THREE.Vector3(), tq = new THREE.Quaternion();
-  return {
-    set(pose, now) {
-      if (!pose) return;
-      tp.fromArray(pose, 0); tq.fromArray(pose, 3);
-      if (now - seen > STALE) { g.position.copy(tp); g.quaternion.copy(tq); } // (re)appearing: no glide in
-      seen = now;
-    },
-    update(now, dt) {
-      g.visible = body.visible = now - seen < STALE;
-      if (!g.visible) return;
-      // eased toward the latest pose (they arrive ~45 a second, unevenly)
-      const a = 1 - Math.exp(-dt * 20);
-      g.position.lerp(tp, a); g.quaternion.slerp(tq, a);
-      // the body hangs below the head, upright, its top 0.25 m under the eyes
-      const top = Math.max(0.3, g.position.y - 0.25);
-      body.scale.set(1, top, 1);
-      body.position.set(g.position.x, top / 2, g.position.z);
-    },
-  };
-}
 
 function headPose(camera) {
   const p = camera.getWorldPosition(new THREE.Vector3()), q = camera.getWorldQuaternion(new THREE.Quaternion());
@@ -67,49 +34,98 @@ function headPose(camera) {
 const handsOut = (hands) => hands.encode().map((a) => (a ? toB64(new Uint8Array(a.buffer)) : null));
 const handsIn = (list) => list?.map((s) => (s ? new Float32Array(fromB64(s).buffer) : null)) ?? [null, null];
 
+// Keep left/right identity even when hands cross. Free controllers must animate their own arms too.
+export function avatarInputs(controllers = [], hands) {
+  const effectors = {};
+  for (const c of controllers) {
+    if (!c.source || c.source.hand || !['left', 'right'].includes(c.handedness) || c.grip.visible === false) continue;
+    effectors[c.handedness] = { pose: headPose(c.grip), kind: 'controller' };
+  }
+  for (const h of hands?.hands ?? []) {
+    if (h.remote || !h.tracked || !['left', 'right'].includes(h.handedness)) continue;
+    const wrist = h.group?.joints?.wrist;
+    if (wrist?.visible) effectors[h.handedness] = { pose: headPose(wrist), kind: 'hand', slot: h.i };
+  }
+  return effectors;
+}
+
 // both roles: send this headset's pose (and the kine while this headset holds it), take in the other's
-function createPoseLink({ net, hands, camera, scene, station, onPose }) {
-  const avatar = createAvatar(scene);
+function createPoseLink({ net, hands, camera, scene, station, controllers, onPose }) {
+  const avatar = createRabbitAvatar(scene, { variant: net.role === 'host' ? 'indigo' : 'red', hands });
   let clock = 0, acc = 0;
-  net.on('pose', (d) => { hands.setRemote(handsIn(d.hands)); avatar.set(d.head, clock); onPose?.(d, clock); });
+  net.on('pose', (d, peer) => {
+    if (peer.role !== (net.role === 'host' ? 'join' : 'host')) return;
+    hands.setRemote(handsIn(d.hands)); avatar.set(d.head, clock, d.kine, d.effectors); onPose?.(d, clock, peer);
+  });
   return {
     get clock() { return clock; },
+    get otherHead() { return avatar.headPosition; }, // the other person's head (world), or null while unseen
     update(dt) {
       clock += dt; acc += dt;
       avatar.update(clock, dt);
-      if (acc >= POSE_DT) { acc = 0; net.send('pose', { head: headPose(camera), hands: handsOut(hands), kine: station.heldKineTarget() }); }
+      if (acc >= POSE_DT) { acc = 0; net.send('pose', { head: headPose(camera), hands: handsOut(hands), kine: station.heldKineTarget(), assetId: station.kineAssetId, effectors: avatarInputs(controllers, hands) }); }
     },
   };
 }
 
-export function createHostSync({ net, station, hands, camera, scene }) {
+export function createHostSync({ net, station, hands, camera, scene, controllers }) {
   // the guest holding the kine: posed from each 'pose' message; let go if they go quiet for a second
-  let kineSeen = -Infinity, phaseAcc = 0, doughAcc = 0;
+  let kineSeen = -Infinity, phaseAcc = 0, doughAcc = 0, conditionAcc = 0, kineHolder = null;
+  const hitReports = new Set();
   const sendDough = (snap) => net.send('dough', { tier: snap.tier, N: snap.N, x: toB64(new Uint8Array(snap.x.buffer)), v: toB64(new Uint8Array(snap.v.buffer)) });
   const pose = createPoseLink({
-    net, hands, camera, scene, station,
-    onPose(d, now) { if (station.mode === 'remote' && d.kine) { station.setRemoteKine(d.kine); kineSeen = now; } },
+    net, hands, camera, scene, station, controllers,
+    onPose(d, now, peer) {
+      if (station.mode !== 'remote' || peer.from !== kineHolder || !d.kine) return;
+      kineSeen = now;
+      // A pose from before a tool change uses the old grip. Wait for the holder to apply the
+      // host's asset ID rather than colliding that old pose with a differently shaped mallet.
+      if (d.assetId !== station.kineAssetId) return;
+      station.setRemoteKine(d.kine);
+    },
   });
+  const sendAsset = () => net.send('kine-asset', { assetId: station.kineAssetId });
+  station.on('kine-asset', sendAsset);
   station.on('phase', (phase) => net.send('phase', { phase }));
-  net.on('kine-take', () => {
-    if (station.mode !== 'idle') { net.send('kine-grant', { ok: false }); return; }
+  const sendConditioning = () => { if (station.conditioning) net.send('conditioning', station.conditioning); };
+  station.on('conditioning', sendConditioning);
+  station.on('hand-hit', (event) => net.send('hand-hit', event));
+  net.on('condition-success', (event, peer) => {
+    if (peer.role !== 'join') return;
+    if (event.action === 'strike' && peer.from !== kineHolder) return;
+    station.recordSuccessfulAction?.(event);
+  });
+  net.on('hand-hit-report', (event, peer) => {
+    if (peer.role !== 'join' || typeof event.id !== 'string' || event.id.length > 80 || event.epoch !== station.conditioning?.epoch) return;
+    const key = `${peer.from}:${event.id}`;
+    if (hitReports.has(key)) return;
+    hitReports.add(key); if (hitReports.size > 256) hitReports.delete(hitReports.values().next().value);
+    station.reportHandHit?.();
+  });
+  net.on('kine-take', (d, peer) => {
+    if (peer.role !== 'join') return;
+    if (station.mode !== 'idle') { net.send('kine-grant', { to: peer.from, ok: false }); return; }
     station.setRemoteKine(null); station.setMode('remote'); kineSeen = pose.clock;
-    net.send('kine-grant', { ok: true });
+    kineHolder = peer.from;
+    net.send('kine-grant', { to: peer.from, ok: true, assetId: station.kineAssetId });
     console.info('[mp] the guest took the kine');
   });
-  net.on('kine-drop', () => { if (station.mode === 'remote') { station.setMode('idle'); station.setRemoteKine(null); console.info('[mp] the guest put the kine down'); } });
+  net.on('kine-drop', (d, peer) => { if (station.mode === 'remote' && peer.from === kineHolder) { kineHolder = null; station.setMode('idle'); station.setRemoteKine(null); console.info('[mp] the guest put the kine down'); } });
   return {
     role: 'host',
     get peer() { return net.has('join'); },
+    get otherHead() { return pose.otherHead; },
     update(dt) {
       pose.update(dt);
+      conditionAcc += dt;
+      if (conditionAcc >= 0.2) { conditionAcc = 0; sendConditioning(); }
       if (station.mode === 'remote' && pose.clock - kineSeen > 1) {
-        station.setMode('idle'); station.setRemoteKine(null); net.send('kine-revoked', {});
+        station.setMode('idle'); station.setRemoteKine(null); net.send('kine-revoked', { to: kineHolder }); kineHolder = null;
         console.info('[mp] the guest went quiet: the kine goes back beside the mortar');
       }
       // the phase once a second too, for a guest that just joined or missed a change
       phaseAcc += dt;
-      if (phaseAcc >= 1) { phaseAcc = 0; net.send('phase', { phase: station.phase }); }
+      if (phaseAcc >= 1) { phaseAcc = 0; net.send('phase', { phase: station.phase }); sendAsset(); }
       // the dough, while someone has joined
       doughAcc += dt;
       if (doughAcc >= DOUGH_DT && net.has('join')) { doughAcc = 0; station.dough.requestSnapshot(sendDough); }
@@ -117,32 +133,48 @@ export function createHostSync({ net, station, hands, camera, scene }) {
   };
 }
 
-export function createGuestSync({ net, station, hands, camera, scene }) {
+export function createGuestSync({ net, station, hands, camera, scene, controllers }) {
   station.setFollower(true);
   // the host holding the kine (its 'pose' carries it): posed from it here
   let hostKineSeen = -Infinity;
   const pose = createPoseLink({
-    net, hands, camera, scene, station,
+    net, hands, camera, scene, station, controllers,
     onPose(d, now) {
+      if (d.assetId) station.setKineAsset(d.assetId);
       if (!d.kine) return;
       if (station.mode === 'idle') station.setMode('remote');
       if (station.mode === 'remote') { station.setRemoteKine(d.kine); hostKineSeen = now; }
     },
   });
+  net.on('kine-asset', (d, peer) => { if (peer.role === 'host') station.setKineAsset(d.assetId); });
+  net.on('conditioning', (state, peer) => { if (peer.role === 'host') station.applyConditioning?.(state); });
+  net.on('hand-hit', (event, peer) => { if (peer.role === 'host') station.receiveHandHit?.(event); });
+  let hitSequence = 0;
+  station.on('kine_contact', (contact) => {
+    if (contact.kind === 'hand' && station.phase === 'pound') {
+      net.send('hand-hit-report', { id: String(++hitSequence), epoch: station.conditioning?.epoch });
+    }
+  });
   net.on('phase', (m) => station.followPhase(m.phase));
   net.on('dough', (m) => station.dough.applySnapshot({ tier: m.tier, N: m.N, x: new Int16Array(fromB64(m.x).buffer), v: new Int16Array(fromB64(m.v).buffer) }, DOUGH_EASE));
   let onKine = null;
-  net.on('kine-grant', (m) => onKine?.(m.ok));
-  net.on('kine-revoked', () => onKine?.(false));
+  net.on('kine-grant', (m, peer) => {
+    if (peer.role !== 'host' || m.to !== net.id) return;
+    if (m.ok && !station.setKineAsset(m.assetId)) { net.send('kine-drop', {}); onKine?.(false); return; }
+    onKine?.(m.ok);
+  });
+  net.on('kine-revoked', (m, peer) => { if (peer.role === 'host' && m.to === net.id) onKine?.(false); });
   return {
     role: 'join',
     get peer() { return net.has('host'); },
+    get otherHead() { return pose.otherHead; },
     update(dt) {
       pose.update(dt);
       if (station.mode === 'remote' && pose.clock - hostKineSeen > 0.5) { station.setMode('idle'); station.setRemoteKine(null); }
     },
     // the guest's kine: ask the host; onKine(ok) when it answers (false also when it takes the kine back)
     takeKine() { net.send('kine-take', {}); },
+    reportSuccessfulAction(event) { net.send('condition-success', event); },
     dropKine() { net.send('kine-drop', {}); },
     set onKine(fn) { onKine = fn; },
   };

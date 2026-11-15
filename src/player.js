@@ -28,7 +28,9 @@ export function createPlayer({ scene, camera, renderer, dom, getColliders }) {
   let yaw = L.SPAWN.yaw, pitch = -0.08;
   let locked = null; // { position, yaw } while holding the kine on desktop
   let enabled = false;
+  let roomScale = false, vrPlacement = null;
   let strideAcc = 0;
+  let hapticLockedUntil = 0;
   const listeners = {};
   const emit = (n, d) => { for (const fn of listeners[n] ?? []) fn(d); };
 
@@ -132,7 +134,7 @@ export function createPlayer({ scene, camera, renderer, dom, getColliders }) {
     } else {
       // left stick: move where the head looks; right stick: snap turn 30 degrees
       let stick = false;
-      for (const c of controllers) {
+      for (const c of roomScale ? [] : controllers) {
         const gp = c.source?.gamepad;
         if (!gp || gp.axes.length < 4) continue;
         const ax = gp.axes[2], ay = gp.axes[3];
@@ -180,7 +182,7 @@ export function createPlayer({ scene, camera, renderer, dom, getColliders }) {
     return headWorld;
   }
 
-  return {
+  const player = {
     rig, body, controllers,
     on(n, fn) { (listeners[n] ??= []).push(fn); },
     update,
@@ -188,6 +190,22 @@ export function createPlayer({ scene, camera, renderer, dom, getColliders }) {
     get enabled() { return enabled; },
     get head() { return headWorld; },
     get yaw() { return yaw; },
+    get roomScale() { return roomScale; },
+    setRoomScale(value) { roomScale = !!value; if (!roomScale) vrPlacement = null; },
+    // Align once from a real tracked pose, rather than the desktop camera left over at sessionstart.
+    beginRoomScale(position, lookAt) { if (roomScale) vrPlacement = { position, lookAt }; },
+    updateXRPlacement() {
+      if (!renderer.xr.isPresenting || !vrPlacement) return;
+      const frame = renderer.xr.getFrame(), reference = renderer.xr.getReferenceSpace();
+      const pose = reference && frame?.getViewerPose(reference);
+      if (!pose) return;
+      camera.position.copy(pose.transform.position);
+      camera.quaternion.copy(pose.transform.orientation);
+      rig.updateMatrixWorld(true);
+      player.placeHeadAt(vrPlacement.position[0], vrPlacement.position[2], vrPlacement.lookAt);
+      vrPlacement = null;
+      console.info('[vr] room scale: positioned once; physical movement keeps the world fixed');
+    },
     // desktop: stand at the pounding spot, facing the mortar, looking down at the dough
     lockAt(position, faceYaw, lookPitch) {
       locked = { position };
@@ -205,7 +223,7 @@ export function createPlayer({ scene, camera, renderer, dom, getColliders }) {
         // the head's heading (yaw), not its gaze: looking down at your hands, the gaze is near vertical
         // and its horizontal direction is noise
         const yawNow = new THREE.Euler().setFromQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()), 'YXZ').y;
-        const ang = Math.atan2(-(lookAt[0] - headWorld.x), -(lookAt[2] - headWorld.z)) - yawNow;
+        const ang = Math.atan2(-(lookAt[0] - x), -(lookAt[2] - z)) - yawNow;
         rig.position.sub(headWorld).applyAxisAngle(THREE.Object3D.DEFAULT_UP, ang).add(headWorld);
         rig.rotation.y += ang;
         rig.updateMatrixWorld(true);
@@ -227,7 +245,15 @@ export function createPlayer({ scene, camera, renderer, dom, getColliders }) {
       strideAcc = 0;
     },
     haptic(c, intensity = 0.6, ms = 60) {
-      try { c?.source?.gamepad?.hapticActuators?.[0]?.pulse?.(intensity, ms); } catch { /* not supported */ }
+      if (performance.now() < hapticLockedUntil) return;
+      try { c?.source?.gamepad?.hapticActuators?.[0]?.pulse?.(intensity, ms)?.catch?.(() => {}); } catch { /* not supported */ }
+    },
+    warnHandHit() {
+      hapticLockedUntil = performance.now() + 700;
+      for (const c of controllers) {
+        try { c.source?.gamepad?.hapticActuators?.[0]?.pulse?.(1, 700)?.catch?.(() => {}); } catch { /* no haptic hardware */ }
+      }
     },
   };
+  return player;
 }

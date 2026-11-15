@@ -153,6 +153,14 @@ export function strikesFromBeats(analysis, every) {
   return beats.filter((_, i) => i % 2 === phase);
 }
 
+// A fold belongs halfway between consecutive strikes. Include the last-to-first interval so
+// the two players keep alternating when the song loops, including at the slower strike pace.
+export function kneadsFromStrikes(strikes, duration) {
+  if (!strikes.length || !(duration > 0)) return [];
+  return strikes.map((t, i) => ((t + (strikes[i + 1] ?? strikes[0] + duration)) / 2) % duration)
+    .sort((a, b) => a - b);
+}
+
 // A comfortable mallet pace: every beat unless that is faster than one strike per 0.75 s.
 export function autoEvery(analysis) {
   return analysis.period < 0.75 ? 2 : 1;

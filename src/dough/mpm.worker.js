@@ -26,11 +26,12 @@ self.onmessage = (e) => {
     const t0 = performance.now();
     sim.progress = m.progress ?? 0;
     sim.wet = m.wet ?? 0;
+    if (m.youngsModulus !== undefined) sim.setYoungsModulus(m.youngsModulus);
     sim.step(m.dt, m.tools ?? []);
     // a grid buffer from before a quality change has the wrong size: say so instead of writing it
     const stats = m.field.length !== sim.n3 ? { count: sim.N, stale: true, topY: null } : sim.writeField(m.field, m.axis);
     stats.stepMs = performance.now() - t0;
-    stats.simDt = m.dt; // simulated seconds this step covered
+    stats.simDt = sim.lastSimDt; // simulated seconds actually covered by the stable timestep
     stats.substeps = sim.lastSubsteps ?? 0;
     stats.n = sim.n;
     if (m.snap) {

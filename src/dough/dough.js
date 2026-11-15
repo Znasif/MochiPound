@@ -33,6 +33,7 @@ export function createDough(scene, { usu, map }) {
   let load = 0; // smoothed (worker time) / (simulated time); above ~1 the dough runs slower than real time
   let cost = 0;  // smoothed ms per particle-substep measured in play (the probe at start can be pessimistic)
   let wet = 0;   // 0..1: the turner's water dip makes the dough slippery; dries over a few strikes
+  let youngsModulus = 4000;
   const prev = new Map();
   const fresh = new Set(); // tool ids that (re)appeared since the last step sent
   let wantSnap = false, onSnapshot = null, followTier = false; // multiplayer (requestSnapshot, applySnapshot)
@@ -171,6 +172,7 @@ export function createDough(scene, { usu, map }) {
     },
     get wetness() { return wet; },
     setWetness(w) { wet = Math.min(1, Math.max(0, w)); },
+    setYoungsModulus(E) { if (Number.isFinite(E) && E > 0) youngsModulus = E; },
     // tools: [{ id, kind: 'sphere' | 'cylinder', center: Vector3, quat: Quaternion, r, h, tack (0 slides off, 1 sticks), mould (1: a hand, see mpm-core mouldYield) }]
     update(dt, tools, progress) {
       acc += dt;
@@ -188,7 +190,7 @@ export function createDough(scene, { usu, map }) {
         return { id: t.id, group: t.group, kind: t.kind, r: t.r, h: t.h ?? 0, tack: t.tack ?? 0, mould: t.mould ?? 0, friction: t.friction ?? 0, c0: last.c, c1, q0: last.q, q1 };
       });
       fresh.clear();
-      worker.postMessage({ type: 'step', dt: frameDt, tools: msgTools, progress, wet, field: spare, axis: { x: usu.x, z: usu.z, r: 0.1 }, snap: wantSnap }, [spare.buffer]);
+      worker.postMessage({ type: 'step', dt: frameDt, tools: msgTools, progress, wet, youngsModulus, field: spare, axis: { x: usu.x, z: usu.z, r: 0.1 }, snap: wantSnap }, [spare.buffer]);
       wantSnap = false;
       spare = null;
       busy = true;

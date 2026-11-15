@@ -26,6 +26,9 @@ export const TURNER_SPOT = [-0.78, 0, -0.08]; // the kneading person (aitori) on
 // same west side (away from the pounder and the mallet's swing), the head 0.6 m from the axis so the
 // dough is within arm's reach by leaning in (from the old kneeling spot, 0.78 m, a standing person can't reach it)
 export const KNEAD_SPOT = [-0.6, 0, -0.06];
+// a second kneader (two headsets, the other person already at KNEAD_SPOT): the north rim, across from
+// the pounder and out of the mallet's swing, the head as far from the axis
+export const KNEAD_SPOT_FAR = [0, 0, -0.6];
 export const OKE = { position: [-0.95, 0, 0.35], radius: 0.2, height: 0.26, stand: 0.3 }; // hand-water bucket on a low stand, at the turner's left hand
 
 // ---- the shrine courtyard (src/world.js, and src/manifest.js for the Satie contract) ----

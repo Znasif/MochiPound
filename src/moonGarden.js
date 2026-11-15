@@ -546,6 +546,7 @@ export function buildMoonGarden(scene, renderer, options = {}) {
     groundHeight: (x, z) => groundHeightU(x, -z) - gh0,
     spawn: { position: [0.9, 0, 3.1], yaw: Math.atan2(0.9, 3.1) },
     lights: { moonLight, mochiLight, probe },
+    audioAnchors: { chime: props.pivots.chime.audioAnchor, fountain: props.pivots.fountain.audioAnchor },
     // for the story layer (src/moonGarden/story/): the Earth's light (see setEarthLight above; earthLight is its
     // live state { bright, pulse, city }, read only), the viewer the city lights face (update's head does the same),
     // the Moon and the Earth (three world positions, and Unity-frame ones under `unity`), the Unity-frame node and

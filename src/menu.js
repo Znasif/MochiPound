@@ -53,8 +53,8 @@ setTimeout(() => menu.classList.add('settled'), 1300);
 const DETAIL = {
   'mp-role': {
     solo: ['Play alone', 'One headset (or a desktop browser).'],
-    host: ['Host', 'This headset holds the mallet and keeps the batch’s time; the other headset joins.'],
-    join: ['Join', 'Join the host in the same room and knead with your own hands.'],
+    host: ['Host', 'This headset runs the dough and the music clock; the other headset joins. Either of you can pound or knead.'],
+    join: ['Join', 'Join the host in the same room. Pick up the mallet when it’s free, or knead with your own hands.'],
   },
   world: Object.fromEntries(WORLDS.map((w) => [w.id, [w.name, w.ready ? w.blurb : `${w.blurb} Coming soon.`]])),
 };
@@ -102,15 +102,11 @@ function updateValues() {
   setText($('v-worlds'), worldById(worldSel.value)?.name.replace(/ (courtyard|garden)$/i, '') ?? '');
   const mp = $('mp-role');
   setText($('v-players'), { solo: 'Alone', host: 'Host', join: 'Join' }[mp?.value] ?? '');
-  const song = $('song'), file = $('songfile');
-  setText($('v-music'), file?.files?.[0]?.name ?? (song?.value ? song.value.replace(/\.[a-z0-9]+$/i, '') : 'Free play'));
   const q = $('dough-quality');
   setText($('v-settings'), q?.value ? `dough ${q.value}` : 'dough auto');
-  // music isn't offered to a joining headset (the host plays it): main.js hides #rhythm-box
-  $('menu-music').classList.toggle('hidden', $('rhythm-box')?.classList.contains('hidden') ?? false);
 }
-for (const id of ['song', 'songfile', 'density', 'mp-role', 'dough-quality', 'world']) $(id)?.addEventListener('change', updateValues);
-// main.js fills some selects after load (songs, quality tiers) and may hide the music box
+for (const id of ['mp-role', 'dough-quality', 'world']) $(id)?.addEventListener('change', updateValues);
+// main.js fills the quality tiers after load
 new MutationObserver(updateValues).observe(overlay, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
 updateValues();
 

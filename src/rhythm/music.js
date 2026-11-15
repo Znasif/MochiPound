@@ -6,13 +6,15 @@ import { analyzeBeats } from './beats.js';
 
 const CAL_KEY = 'mochi.rhythm.calibrationMs';
 
-export function createMusic() {
+export function createMusic({ keepAlive = false } = {}) {
   const ctx = new AudioContext({ latencyHint: 'interactive' });
   const gain = ctx.createGain();
   gain.gain.value = 0.8;
   gain.connect(ctx.destination);
   let buffer = null, analysis = null, name = '';
   let source = null, startAt = 0, playing = false;
+  let loadId = 0;
+  let paused = false, background = null;
   let calibrationMs = 0;
   try { calibrationMs = Number(localStorage.getItem(CAL_KEY)) || 0; } catch { /* storage unavailable */ }
 
@@ -32,6 +34,7 @@ export function createMusic() {
   function stopSource() {
     if (source) { try { source.stop(); } catch { /* already stopped */ } source.disconnect(); source = null; }
     playing = false;
+    background = null;
   }
   // start the looping source at context time T, with song time 0 heard at context time `zero`
   function play(T, zero) {
@@ -44,18 +47,38 @@ export function createMusic() {
     const d = buffer.duration;
     source.start(T, (((T - zero) % d) + d) % d);
     playing = true;
+    paused = false;
   }
+
+  const position = () => !playing ? null : background
+    ? background.pos + (paused ? 0 : (performance.now() - background.at) / 1000)
+    : heardContextTime() - startAt;
+
+  // A host taking off their headset must not pause the shared song. If the browser suspends
+  // its audio device, keep the transport advancing, then seek local audio on its return.
+  ctx.addEventListener('statechange', () => {
+    if (!keepAlive || !playing || paused || ctx.state === 'closed') return;
+    if (ctx.state !== 'running' && !background) {
+      background = { pos: heardContextTime() - startAt, at: performance.now() };
+    } else if (ctx.state === 'running' && background) {
+      const pos = position();
+      play(ctx.currentTime + 0.1, heardContextTime() - pos);
+    }
+  });
 
   return {
     ctx,
     get analysis() { return analysis; },
     get name() { return name; },
     get playing() { return playing; },
+    get paused() { return paused || (!keepAlive && ctx.state !== 'running'); },
     get duration() { return buffer?.duration ?? 0; },
     get calibrationMs() { return calibrationMs; },
-    async load(arrayBuffer, label) {
+    async load(arrayBuffer, label, hostAnalysis = null) {
+      const id = ++loadId;
       const decoded = await ctx.decodeAudioData(arrayBuffer);
-      const a = analyzeBeats(decoded);
+      if (id !== loadId) return null;
+      const a = hostAnalysis ?? analyzeBeats(decoded);
       if (a.beats.length < 8) throw new Error('could not find a steady beat in this song');
       buffer = decoded; analysis = a; name = label;
       return a;
@@ -80,14 +103,23 @@ export function createMusic() {
       return true;
     },
     // the song time being heard (s), without the player's timing calibration; null when not playing
-    position() { return playing ? heardContextTime() - startAt : null; },
-    stop() { stopSource(); },
-    pause() { if (playing) void ctx.suspend(); },
-    resume() { if (playing) void ctx.resume(); },
+    position,
+    stop() { loadId++; stopSource(); },
+    pause() {
+      if (!playing || paused) return;
+      if (background) background = { pos: position(), at: performance.now() };
+      paused = true;
+      if (ctx.state === 'running') void ctx.suspend();
+    },
+    resume() {
+      if (!playing) return;
+      if (paused && background) background.at = performance.now();
+      paused = false; void ctx.resume();
+    },
     // song time being heard, seconds since the song started, continuous across loops
     time() {
       if (!playing) return -Infinity;
-      return heardContextTime() - startAt + calibrationMs / 1000;
+      return position() + calibrationMs / 1000;
     },
     nudge(ms) {
       calibrationMs = Math.max(-300, Math.min(300, calibrationMs + ms));

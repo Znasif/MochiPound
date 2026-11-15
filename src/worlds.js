@@ -15,10 +15,11 @@
 //   setProgress(p)                   optional: the batch's progress 0..1, eased (main.js shownProgress)
 //   spawn        { position, yaw }   where the player starts
 //   enterLabel   the Play button's text once the sound has loaded
-//   sound        { hosts, muted, mixGroups } for the Satie soundscape, which is still the shrine
+//   sound        { hosts, muted, mixGroups, createAmbience? } for the Satie soundscape, which is still the shrine
 //                courtyard's (src/manifest.js): `hosts` binds its world fixtures (seiro, kamado, takibi,
 //                bonsho) to meshes (main.js puts an empty marker where a world has none), `muted` lists
 //                source ids to silence, `mixGroups` the world's groups in the dev mixer
+//                `createAmbience({ camera })` adds a world's local start/update/setVisible audio layer
 //   onSound      set by main.js to (host, event) => audio.hostEvent(host, event), for world sounds
 // Each world sets its own lights, sky and fog; main.js sets ACES tone mapping (exposure 1.05) and a
 // FogExp2(0x101828, 0.03) before building, and a world may override them.
@@ -76,17 +77,19 @@ export const WORLDS = [
     blurb: 'A moonlit clearing on a floating island, the Moon and the Earth over the bamboo.',
     ready: true,
     async build(scene, renderer) {
-      const { buildMoonGarden } = await import('./moonGarden.js');
+      const [{ buildMoonGarden }, { createMoonAmbience }] = await Promise.all([
+        import('./moonGarden.js'), import('./moonGarden/ambience.js'),
+      ]);
       const g = buildMoonGarden(scene, renderer); // sets its own tone mapping, sky, fog and lights
       return {
         root: g.root,
         colliders: g.colliders,
         spawn: g.spawn,
         enterLabel: 'Enter the garden',
-        // only the station's sounds play here (pound, turn, dip, rice_drop): the courtyard's ambience and
-        // footsteps are muted, and its fixtures are bound to empty markers where they stood
+        // Keep the shrine-only sources muted; the garden has its own local wind, water and chimes.
         sound: {
           hosts: {},
+          createAmbience: ({ camera }) => createMoonAmbience({ camera, sources: g.audioAnchors }),
           muted: ['stove_fire', 'pot_bubbling', 'steamer_hiss', 'bonfire', 'steamer_open', 'bell_toll', 'footsteps'],
           mixGroups: [{ id: 'rice', label: 'Rice', sourceIds: ['rice_drop'] }],
         },

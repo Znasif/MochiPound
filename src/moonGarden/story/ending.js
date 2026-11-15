@@ -131,13 +131,16 @@ export async function createEnding(ctx) {
   function begin(from) {
     camera.getWorldPosition(camW);
     garden.toUnity(camW, camU);
+    garden.setViewer?.(camW);
     running = true; done = false; stage = 'rise'; st = 0;
     t0 = clock - C.stationDelay;
     garden.toUnity(from, start).y += 0.02;
     risen.copy(start).y += 0.5;
     trailCount = 0; trailHead = 0; trailUntil = Infinity;
     earth.fading = false; earth.swell = 0; earth.owner = false;
-    earth.b0 = garden.earthLight?.bright ?? 1; // what the intro left (dark, or the built look)
+    earth.b0 = earth.bright = garden.earthLight?.bright ?? 1;
+    earth.pulse = garden.earthLight?.pulse ?? 0; earth.city = garden.earthLight?.city ?? 0;
+    earth.wB = NaN;
     orbMat.uniforms.uGlow.value = 0.06;
     pos.copy(start);
     orbLook(0.75, 1);
@@ -249,6 +252,14 @@ export async function createEnding(ctx) {
     earth.bright = smoothStep(earth.fromB, earth.b0, k);
   }
   function earthStep(dt) {
+    // Only the reset fade yields ownership, and check before advancing its last frame. A restarted
+    // intro may already have made the Earth dark in the same frame as finish().
+    const L = garden.earthLight;
+    if (earth.owner && earth.fading && !running && L && !Number.isNaN(earth.wB)
+      && (L.bright !== earth.wB || L.pulse !== earth.wP || L.city !== earth.wC)) {
+      earth.owner = false; earth.fading = false; earth.fresh = false; earth.wB = NaN;
+      return;
+    }
     const fresh = earth.fresh;
     earth.fresh = false;
     if (earth.swell === 1 && !fresh) { earth.swellA += dt; swellBody(); }
@@ -265,11 +276,6 @@ export async function createEnding(ctx) {
     if (!earth.owner) return;
     // after the reset, someone else setting the Earth (an intro restarting) makes it theirs again; during the
     // ending the ending's sequence wins
-    const L = garden.earthLight;
-    if (L && !running && !Number.isNaN(earth.wB) && (L.bright !== earth.wB || L.pulse !== earth.wP || L.city !== earth.wC)) {
-      earth.owner = false; earth.fading = false; earth.wB = NaN;
-      return;
-    }
     garden.setEarthLight(earth.bright, earth.pulse, earth.city);
     if (L) { earth.wB = L.bright; earth.wP = L.pulse; earth.wC = L.city; }
     if (!earth.fading && !running) { earth.owner = false; earth.wB = NaN; }
