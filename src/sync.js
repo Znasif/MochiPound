@@ -18,7 +18,9 @@ import { toB64, fromB64 } from './net.js';
 //                          person's hands act on it at once, and eases its particles toward the host's
 //                          (dough.applySnapshot), so both see the same lump. Both build the dough the same way
 //                          (the guest takes the host's tier), so particle i is the same bit of dough on both
-// Music in rhythm mode plays on the host's headset only.
+// Either headset can hold the kine (VR or desktop) or knead: whoever holds the kine pounds, and a second kneader
+// is placed at the far rim. Music in rhythm mode plays on both headsets: the host leads it and the guest lines its
+// own copy up with the host's clock (src/musicSync.js, its own messages).
 
 const POSE_DT = 1 / 45, DOUGH_DT = 1 / 12;
 const DOUGH_EASE = 0.35; // share of the way to the host's particles per update (~0.25 s to agree)
@@ -40,6 +42,8 @@ function createAvatar(scene) {
   let seen = -Infinity;
   const tp = new THREE.Vector3(), tq = new THREE.Quaternion();
   return {
+    // where the other person's head is (null while they're not seen)
+    get position() { return g.visible ? g.position : null; },
     set(pose, now) {
       if (!pose) return;
       tp.fromArray(pose, 0); tq.fromArray(pose, 3);
@@ -74,6 +78,7 @@ function createPoseLink({ net, hands, camera, scene, station, onPose }) {
   net.on('pose', (d) => { hands.setRemote(handsIn(d.hands)); avatar.set(d.head, clock); onPose?.(d, clock); });
   return {
     get clock() { return clock; },
+    get otherHead() { return avatar.position; },
     update(dt) {
       clock += dt; acc += dt;
       avatar.update(clock, dt);
@@ -101,6 +106,7 @@ export function createHostSync({ net, station, hands, camera, scene }) {
   return {
     role: 'host',
     get peer() { return net.has('join'); },
+    get otherHead() { return pose.otherHead; },
     update(dt) {
       pose.update(dt);
       if (station.mode === 'remote' && pose.clock - kineSeen > 1) {
@@ -137,6 +143,7 @@ export function createGuestSync({ net, station, hands, camera, scene }) {
   return {
     role: 'join',
     get peer() { return net.has('host'); },
+    get otherHead() { return pose.otherHead; },
     update(dt) {
       pose.update(dt);
       if (station.mode === 'remote' && pose.clock - hostKineSeen > 0.5) { station.setMode('idle'); station.setRemoteKine(null); }

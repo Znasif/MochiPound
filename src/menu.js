@@ -53,8 +53,8 @@ setTimeout(() => menu.classList.add('settled'), 1300);
 const DETAIL = {
   'mp-role': {
     solo: ['Play alone', 'One headset (or a desktop browser).'],
-    host: ['Host', 'This headset holds the mallet and keeps the batch’s time; the other headset joins.'],
-    join: ['Join', 'Join the host in the same room and knead with your own hands.'],
+    host: ['Host', 'This headset runs the dough, the batch and the music; the other joins. Either of you can pound or knead.'],
+    join: ['Join', 'Join the host in the same room: pick up the mallet or knead, and hear the host’s music.'],
   },
   world: Object.fromEntries(WORLDS.map((w) => [w.id, [w.name, w.ready ? w.blurb : `${w.blurb} Coming soon.`]])),
 };

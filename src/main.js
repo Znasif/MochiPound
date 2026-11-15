@@ -12,6 +12,7 @@ import { createHostSync, createGuestSync } from './sync.js';
 import { loadAudio } from './audio.js';
 import { createMusic } from './rhythm/music.js';
 import { createRhythm } from './rhythm/rhythm.js';
+import { createMusicLead, createMusicFollow } from './musicSync.js';
 
 // ---------- renderer, scene, camera ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -235,7 +236,10 @@ vrButton.addEventListener('click', () => {
 renderer.xr.addEventListener('sessionstart', () => {
   handsGoneFor = Infinity;
   story?.enter?.(true);
-  if (station.mode === 'desktop') { station.setMode('idle'); player.unlock(); }
+  if (station.mode === 'desktop') {
+    if (guest && guestHolds) { guestHolds = false; sync.dropKine(); }
+    station.setMode('idle'); player.unlock();
+  }
   ui.overlay.classList.add('hidden');
   ui.hud.classList.add('hidden');
   credit?.hide();
@@ -267,7 +271,8 @@ function stopMusic() {
 }
 // called inside the enter click (a user gesture), and when a song finishes loading after entering
 function startMusic() {
-  if (guest) return; // the host's headset plays the music
+  // the joining headset plays the host's song, lined up with the host's (src/musicSync.js)
+  if (guest) { entered = true; music.unlock(); follow?.kick(); return; }
   entered = true;
   music.unlock();
   if (!songChosen || !music.analysis) return; // still finding the beat: starts when it's done
@@ -277,25 +282,50 @@ function startMusic() {
   ui.rhud.classList.remove('hidden');
 }
 let loadId = 0;
-async function loadSong(read, label) {
+// the loaded song as the host tells the guest about it: { name, src: 'list' | 'file', bytes (a file's, kept for
+// sending: decodeAudioData detaches the buffer it decodes) }
+let currentSong = null;
+// read() -> the song's bytes; src: 'list' (public/music/), 'file' (the file picker) or 'host' (the guest's copy of
+// the host's). Resolves true once it is decoded and its beats are found.
+async function loadSong(read, label, src = 'list') {
   const id = ++loadId;
   stopMusic();
   songChosen = true;
+  currentSong = null;
   ui.rStatus.textContent = `Finding the beat in ${label}…`;
   try {
     const bytes = await read();
-    if (id !== loadId) return;
+    if (id !== loadId) return false;
+    const keep = src === 'file' ? bytes.slice(0) : null;
     await music.load(bytes, label);
-    if (id !== loadId) return;
+    if (id !== loadId) return false;
+    currentSong = { name: label, src, bytes: keep };
     describeSong();
     if (entered && player.enabled) startMusic(); // picked from the menu while already playing
+    return true;
   } catch (err) {
-    if (id !== loadId) return;
+    if (id !== loadId) return false;
     console.warn('[rhythm] song failed', err);
     songChosen = false;
     ui.rStatus.textContent = `Could not use ${label}: ${err.message}`;
+    return false;
   }
 }
+const listedSong = (name) => [...ui.song.options].some((o) => o.value === name);
+function pickListedSong(name) {
+  if (!listedSong(name)) return false;
+  ui.song.value = name; ui.song.dispatchEvent(new Event('change'));
+  return true;
+}
+// music on both headsets: the host leads (state, clock, the bytes of a file song), the guest follows
+const lead = mpRole === 'host' ? createMusicLead({ net, music, song: () => currentSong, density: () => ui.density.value, onPick: pickListedSong }) : null;
+const follow = guest ? createMusicFollow({
+  net, music,
+  canPlay: () => entered && ui.overlay.classList.contains('hidden'),
+  load: (name, read) => loadSong(read, name, 'host'),
+  start: (density) => { rhythm.start(density); ui.rhud.classList.remove('hidden'); },
+  stop: () => stopMusic(),
+}) : null;
 fetch('/music/index.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : [])).then((songs) => {
   for (const name of songs) ui.song.add(new Option(name, name));
   if (!songs.length) ui.song.options[0].textContent = 'No songs in public/music/ yet';
@@ -307,7 +337,7 @@ ui.song.addEventListener('change', () => {
 });
 ui.songFile.addEventListener('change', () => {
   const f = ui.songFile.files?.[0];
-  if (f) loadSong(() => f.arrayBuffer(), f.name);
+  if (f) loadSong(() => f.arrayBuffer(), f.name, 'file');
 });
 
 // ---------- the world's story layer (the Moon garden's: intro scroll, song scrolls and mallets, ending, story sounds) ----------
@@ -318,14 +348,47 @@ if (world.attach) {
   const ctx = {
     scene, renderer, camera, player, station, hands, music, rhythm, toast,
     // pick a song from public/music/ by its file name, as the menu does: it starts once its beats are found
+    // (on the joining headset the pick goes to the host, which plays it for both)
     selectSong(name) {
-      if (![...ui.song.options].some((o) => o.value === name)) return false;
-      ui.song.value = name; ui.song.dispatchEvent(new Event('change'));
-      return true;
+      if (!listedSong(name)) return false;
+      if (guest) { net.send('music-pick', { name }); return true; }
+      return pickListedSong(name);
     },
     songs: () => [...ui.song.options].map((o) => o.value).filter(Boolean),
     get audioContext() { return audio?.engine?.audioContext ?? null; },
     get entered() { return player.enabled; },
+    multiplayer: mpRole ?? null, // 'host' | 'join' | null
+    stopMusic: () => stopMusic(),
+    // the song scrolls hand the picked mallet straight to the player: in a VR controller c (as a grip at the
+    // mortar does), or on desktop (c null) at the pounder spot. Returns whether this player now holds it.
+    takeKine(c) {
+      if (station.mode === 'remote') { toast('The other headset is holding the kine.', 1.6); return false; }
+      if (guest) {
+        if (!guestHolds && !wantKine) { wantKine = c ?? { desktop: true }; wantSince = elapsed; sync.takeKine(); }
+        return true;
+      }
+      if (c) {
+        if (station.mode === 'vr' && kineHand === c) return true;
+        if (station.mode !== 'vr') station.setMode('vr');
+        station.attachToGrip(c.grip);
+        kineHand = c;
+        player.placeHeadAt(L.POUNDER_SPOT[0], L.POUNDER_SPOT[2] + 0.12);
+        player.haptic(c, 0.4, 40);
+        return true;
+      }
+      if (renderer.xr.isPresenting) return false;
+      if (station.mode !== 'desktop') {
+        station.setMode('desktop');
+        player.lockAt([L.POUNDER_SPOT[0], 0, L.POUNDER_SPOT[2] + 0.02], 0, -0.62);
+      }
+      return true;
+    },
+    // put the kine down wherever it is held on this headset (the song scrolls' mallet goes back)
+    dropKine() {
+      if (guest && guestHolds) { if (station.mode === 'desktop') player.unlock(); guestDropKine(); sync.dropKine(); }
+      else if (station.mode === 'desktop') { station.setMode('idle'); player.unlock(); }
+      else if (station.mode === 'vr') { station.setMode('idle'); kineHand = null; }
+    },
   };
   world.attach(ctx).then((s) => { story = s; console.info('[story] ready'); })
     .catch((err) => console.error('[story] failed to start; playing without it', err));
@@ -351,18 +414,23 @@ addEventListener('keydown', (e) => {
 const nearMortar = () => Math.hypot(player.head.x - L.USU.position[0], player.head.z - L.USU.position[2]) < L.POUNDING.takeRadius;
 player.on('use', () => {
   if (story?.use?.(null)) return; // the story took the press (e.g. a song scroll you're looking at)
-  if (guest) { toast('On the joining side, take the kine in VR (grip at the mortar).', 2); return; }
   if (renderer.xr.isPresenting) return;
   if (station.mode === 'remote') { toast('The other headset is holding the kine.', 1.6); return; }
   if (station.mode === 'desktop') {
+    if (guest) { guestHolds = false; sync.dropKine(); }
     station.setMode('idle');
     player.unlock();
     player.teleport(L.POUNDER_SPOT[0] + 0.9, L.POUNDER_SPOT[2] + 1.1, 0.4);
   } else if (nearMortar()) {
-    station.setMode('desktop');
-    player.lockAt([L.POUNDER_SPOT[0], 0, L.POUNDER_SPOT[2] + 0.02], 0, -0.62);
+    // either headset may hold it: the joining one asks the host first (sync.onKine below)
+    if (guest) { if (!wantKine) { wantKine = { desktop: true }; wantSince = elapsed; sync.takeKine(); } }
+    else takeDesktopKine();
   }
 });
+function takeDesktopKine() {
+  station.setMode('desktop');
+  player.lockAt([L.POUNDER_SPOT[0], 0, L.POUNDER_SPOT[2] + 0.02], 0, -0.62);
+}
 player.on('strike', () => { if (station.mode === 'desktop') station.desktopSwing(); });
 let kineHand = null;
 // the guest's kine (multiplayer): asked of the host, which hands it over if nobody holds it; then it is
@@ -371,7 +439,10 @@ let wantKine = null, wantSince = 0, guestHolds = false;
 function guestDropKine() { station.setMode('idle'); guestHolds = false; kineHand = null; }
 if (guest) {
   sync.onKine = (ok) => {
-    if (ok && wantKine && !guestHolds) {
+    if (ok && wantKine?.desktop && !guestHolds) {
+      if (!renderer.xr.isPresenting) { takeDesktopKine(); guestHolds = true; kineHand = null; }
+      else sync.dropKine(); // went into VR meanwhile: hand it back
+    } else if (ok && wantKine && !guestHolds) {
       station.setMode('vr');
       station.attachToGrip(wantKine.grip);
       kineHand = wantKine; guestHolds = true;
@@ -379,7 +450,8 @@ if (guest) {
       player.haptic(kineHand, 0.4, 40);
     } else if (!ok) {
       if (wantKine) player.haptic(wantKine, 0.2, 20); // someone else holds it
-      if (guestHolds) guestDropKine();                 // the host took it back
+      if (guestHolds) { if (station.mode === 'desktop') player.unlock(); guestDropKine(); } // the host took it back
+      else if (wantKine?.desktop) toast('The other headset is holding the kine.', 1.6);
     }
     wantKine = null;
   };
@@ -444,8 +516,9 @@ let elapsed = 0;
 let promptText = '';
 let qualityShown = null;
 let mpShown = null;
-if (guest) { ui.rhythmBox?.classList.add('hidden'); ui.quality.disabled = true; } // the host's headset plays the music; the dough is the host's (at its quality)
+if (guest) { ui.rhythmBox?.classList.add('hidden'); ui.quality.disabled = true; } // the host picks the music (both hear it, src/musicSync.js); the dough is the host's (at its quality)
 let handsGoneFor = Infinity; // s since hands were last tracked (VR)
+const KNEAD_SPOT_FAR = [0, 0, -0.6]; // the second kneader: the north rim, across from the pounder
 let shownProgress = 0; // the world's progress effects (the Moon garden's) ease toward the batch's (the Moon wanes over a few s when a new batch starts)
 renderer.setAnimationLoop((time) => {
   timer.update(time);
@@ -465,18 +538,27 @@ renderer.setAnimationLoop((time) => {
   if (!hands.any) handsGoneFor += dt;
   else {
     if (xr && handsGoneFor > 1 && !(guest ? guestHolds : station.mode === 'vr')) {
-      const there = Math.hypot(player.head.x - L.KNEAD_SPOT[0], player.head.z - L.KNEAD_SPOT[2]) < 0.25;
+      // the other headset's wearer already kneading there: this one goes to the far rim, across from the pounder
+      const other = sync?.otherHead;
+      const taken = other && Math.hypot(other.x - L.KNEAD_SPOT[0], other.z - L.KNEAD_SPOT[2]) < 0.45;
+      const spot = taken ? KNEAD_SPOT_FAR : L.KNEAD_SPOT;
+      const there = Math.hypot(player.head.x - spot[0], player.head.z - spot[2]) < 0.25;
       if (!there) {
-        player.placeHeadAt(L.KNEAD_SPOT[0], L.KNEAD_SPOT[2], L.USU.position);
+        player.placeHeadAt(spot[0], spot[2], L.USU.position);
         hands.jumped();
-        console.info('[hands] tracked: moved to the kneading spot, facing the dough');
+        console.info(`[hands] tracked: moved to the ${taken ? 'far-rim ' : ''}kneading spot, facing the dough`);
       }
     }
     handsGoneFor = 0;
   }
-  if (guest && wantKine && elapsed - wantSince > 1.5) { player.haptic(wantKine, 0.2, 20); wantKine = null; } // no answer from the host
+  if (guest && wantKine && elapsed - wantSince > 1.5) { // no answer from the host
+    if (wantKine.desktop) toast('No answer from the host: try again.', 1.6); else player.haptic(wantKine, 0.2, 20);
+    wantKine = null;
+  }
   station.update(dt, elapsed);
   sync?.update(dt);
+  lead?.update(dt);
+  follow?.update(dt);
   if (xr) station.updateVR(dt);
   rhythm.update(dt);
 
@@ -505,7 +587,8 @@ renderer.setAnimationLoop((time) => {
       text = station.phase === 'load' ? 'Fresh rice is coming…'
         : station.handsIn ? 'Wait: hands in the bowl…'
           : 'Click or Space to strike · E to hand the kine back';
-    } else if (nearMortar()) text = 'Press E to take the kine (mallet)';
+    } else if (nearMortar() && station.mode === 'remote') text = 'The other player is holding the kine';
+    else if (nearMortar()) text = 'Press E to take the kine (mallet)';
     if (text !== promptText) { ui.prompt.textContent = text; promptText = text; }
     if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) ui.toast.classList.remove('on'); }
   }
@@ -514,7 +597,7 @@ renderer.setAnimationLoop((time) => {
   {
     const t = !sync ? '' : !net.available ? 'needs the dev server (npm run dev)'
       : sync.role === 'host' ? (sync.peer ? 'the other headset has joined' : 'waiting for the other headset to join…')
-        : (sync.peer ? 'connected to the host' : 'waiting for the host…');
+        : (sync.peer ? `connected to the host${follow?.hostSong ? ` · ♪ ${follow.hostSong.replace(/\.[a-z0-9]+$/i, '')}` : ''}` : 'waiting for the host…');
     if (t !== mpShown) { mpShown = t; ui.mpNote.textContent = t; }
   }
   // which dough tier is running, next to the menu

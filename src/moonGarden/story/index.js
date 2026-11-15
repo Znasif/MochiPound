@@ -31,8 +31,10 @@ export async function createMoonStory(ctx) {
   let sounds = silent;
   try { if (soundsMod?.createStorySounds) sounds = { ...silent, ...soundsMod.createStorySounds(ctx) }; }
   catch (err) { console.error('[story] sounds failed; running the story silent', err); }
-  const pctx = Object.assign(Object.create(ctx), { sounds }); // not a spread: ctx's getters (audioContext, entered) stay live
   const parts = [];
+  // not a spread: ctx's getters (audioContext, entered) stay live. parts: the parts started so far, in order (the
+  // intro, started last, finds the ending there for its reset)
+  const pctx = Object.assign(Object.create(ctx), { sounds, parts });
   for (const [file, name, factory] of [['./ending.js', 'ending', 'createEnding'], ['./songScrolls.js', 'song scrolls', 'createSongScrolls'], ['./intro.js', 'intro', 'createIntro']]) {
     const m = await load(new URL(file, import.meta.url).href, name);
     if (!m?.[factory]) continue;
@@ -42,7 +44,8 @@ export async function createMoonStory(ctx) {
   console.info(`[story] parts: ${parts.map((p) => p.name).join(', ') || 'none'}`);
   return {
     enter(xr) { for (const p of parts) { try { p.enter?.(xr); } catch (err) { console.error(`[story] ${p.name} enter`, err); } } },
-    use(c) { for (const p of parts) { try { if (p.use?.(c)) return true; } catch (err) { console.error(`[story] ${p.name} use`, err); } } return false; },
+    // the intro (last) first: while it plays every press is its skip
+    use(c) { for (const p of [...parts].reverse()) { try { if (p.use?.(c)) return true; } catch (err) { console.error(`[story] ${p.name} use`, err); } } return false; },
     update(dt, t) {
       sounds.update?.(dt, t);
       for (const p of parts) { try { p.update?.(dt, t); } catch (err) { if (!p._warned) { p._warned = true; console.error(`[story] ${p.name} update`, err); } } }
