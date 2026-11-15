@@ -24,7 +24,59 @@ public class MochiSolver : MonoBehaviour, IMochiSim
     public int floorCells = 3;
     [Range(2, 8)] public int particlesPerCell = 4;
 
-    [Header("Dough (SI units)")]
+    public enum DoughModel { ThreeJs, Bingham }
+
+    [Header("Material")]
+    [Tooltip("ThreeJs (default): the three.js scene's dough (mochi-pounding/src/dough/mpm-core.js), an elastic lump that holds its shape and keeps its dents and flows only under a strike; its values are in `threeJs`. Bingham: the earlier Unity tune (soft, pulled back into a dome by `centering`), from the material fields under Dough.")]
+    public DoughModel model = DoughModel.ThreeJs;
+    public ThreeJsDough threeJs = new ThreeJsDough();
+
+    /// <summary>The three.js scene's material and the settings that go with it (mpm-core.js DEFAULTS).</summary>
+    [System.Serializable]
+    public class ThreeJsDough
+    {
+        [Tooltip("Young's modulus, Pa. The shear modulus E / 2(1 + nu) is about 1.4 kPa (fresh mochi measures 0.3-3 kPa).")]
+        public float youngsModulus = 4000f;
+        [Tooltip("Poisson's ratio: nearly incompressible.")]
+        [Range(0f, 0.45f)] public float poisson = 0.4f;
+        [Tooltip("Yield stress of just-steamed rice, Pa. The lump's own weight is near it, so it holds its shape and only creeps.")]
+        public float yieldFresh = 800f;
+        [Tooltip("Yield stress of fully kneaded mochi, Pa.")]
+        public float yieldKneaded = 550f;
+        [Tooltip("Herschel-Bulkley consistency, Pa s^n: above the yield the dough flows at ((stress - yield) / this)^(1 / flowExponent).")]
+        public float flowConsistency = 300f;
+        [Tooltip("Herschel-Bulkley exponent. Below 1 is shear-thinning (wheat dough measures 0.2-0.3): a strike flows at once, gravity only creeps.")]
+        [Range(0.1f, 1f)] public float flowExponent = 0.3f;
+        [Tooltip("Velocity decay, 1/s.")]
+        public float damping = 6f;
+        [Tooltip("Fast plastic shear that makes a particle fully kneaded (many strikes). Kneaded dough yields at yieldKneaded and is tackier.")]
+        public float workToDough = 4f;
+        [Tooltip("How kneaded a fresh particle is, 0..1.")]
+        [Range(0f, 1f)] public float baseCohesion = 0.15f;
+        [Tooltip("Plastic shear slower than this (1/s, creep under its own weight) doesn't knead.")]
+        public float workRateFloor = 3f;
+        [Tooltip("How far the batch is, 0..1 (three.js station progress). Past 0.35 it raises how kneaded every particle is. Gameplay may set it; 0 leaves it to the particles' own work.")]
+        [Range(0f, 1f)] public float progress = 0f;
+        [Tooltip("Pressure against dough packed denser than rest, Pa per unit of excess density.")]
+        public float crowdStiffness = 2000f;
+        [Tooltip("Dough with less than this fraction of rest density around it is a stray speck: braked by strayDrag (1/s) and drawn back to the lump at strayPull (m/s^2).")]
+        [Range(0f, 0.6f)] public float strayDensity = 0.35f;
+        public float strayDrag = 30f;
+        public float strayPull = 6f;
+        [Tooltip("The most speed a tool hands the dough, m/s.")]
+        public float maxToolSpeed = 5f;
+        [Tooltip("Dough pressed against a tool, a hand or the wood moves with it (no slip). Off: Coulomb friction with toolFriction.")]
+        public bool sticky = true;
+        [Tooltip("Share of the follow velocity a pulling tool's bonded dough takes per 3 ms, whatever the substep.")]
+        [Range(0f, 1f)] public float pullGain = 0.8f;
+        [Tooltip("Tensile strength of a bond between the dough and the usu floor, Pa. The three.js dough has none: it lifts off the wood freely.")]
+        public float floorHold = 0f;
+
+        public float ShearModulus => youngsModulus / (2f * (1f + poisson));
+        public float Lambda => youngsModulus * poisson / ((1f + poisson) * (1f - 2f * poisson));
+    }
+
+    [Header("Dough (SI units; the material fields are the Bingham model's)")]
     public float massKg = 2.2f;
     public float density = 1150f;
     [Tooltip("Shear modulus, Pa. Sets the springback of a quick press and how hard a stretched tent pulls back.")]
@@ -130,6 +182,11 @@ public class MochiSolver : MonoBehaviour, IMochiSim
     /// <summary>Height of the dough floor above the bottom of the box, m.</summary>
     public float FloorOffset => floorCells * cellSize;
 
+    bool ThreeJsModel => model == DoughModel.ThreeJs && threeJs != null;
+    /// <summary>Speed of the elastic pressure wave, m/s: it sets the substep.</summary>
+    float WaveSpeed => ThreeJsModel ? Mathf.Sqrt((threeJs.Lambda + 2f * threeJs.ShearModulus) / Mathf.Max(density, 1f)) : waveSpeed;
+    float ToolSpeedCap => ThreeJsModel ? threeJs.maxToolSpeed : maxToolSpeed;
+
     const int Slots = 24;           // must match SLOTS in the compute shader
     const int ParticleStride = 112; // 7 float4
     const int MaxPrims = 512, MaxTools = 16;
@@ -224,7 +281,8 @@ public class MochiSolver : MonoBehaviour, IMochiSim
         cs.DispatchThreads(kBin, ParticleCount, 1, 1);
         cur = 0;
         Debug.Log($"MochiSolver: {ParticleCount} particles, grid {gridCells.x}x{gridCells.y}x{gridCells.z} at {cellSize * 1000f:F1} mm, " +
-                  $"render {voxDims.x}x{voxDims.y}x{voxDims.z}");
+                  $"render {voxDims.x}x{voxDims.y}x{voxDims.z}, dough {model}" +
+                  (ThreeJsModel ? $" (E {threeJs.youngsModulus:F0} Pa, yield {threeJs.yieldFresh:F0}->{threeJs.yieldKneaded:F0} Pa, wave {WaveSpeed:F2} m/s)" : ""));
     }
 
     /// <summary>Centre of the usu floor in local space.</summary>
@@ -276,29 +334,47 @@ public class MochiSolver : MonoBehaviour, IMochiSim
         cs.SetFloat("Dt", dt);
         cs.SetFloat("PVol", pVol);
         cs.SetFloat("PMass", pVol * density);
-        cs.SetFloat("Mu", shearModulus);
+        bool three = ThreeJsModel;
+        var tj = threeJs;
+        cs.SetInt("Model", three ? 1 : 0);
+        cs.SetFloat("Mu", three ? tj.ShearModulus : shearModulus);
         cs.SetFloat("Kappa", Mathf.Max(density * waveSpeed * waveSpeed - 4f / 3f * shearModulus, shearModulus));
         cs.SetFloat("YieldStress", yieldStress);
         cs.SetFloat("RelaxRate", 1f / Mathf.Max(relaxTime, 1e-3f));
         cs.SetFloat("MaxShear", maxShearStress);
-        cs.SetFloat("Centering", centering);
+        cs.SetFloat("Centering", three ? 0f : centering);
         cs.SetFloat("FlowExp", flowExponent);
         cs.SetFloat("ThinStress", Mathf.Max(thinningStress, 1f));
         cs.SetFloat("Gravity", -9.81f);
-        cs.SetFloat("Damping", damping);
-        cs.SetFloat("Friction", toolFriction);
+        cs.SetFloat("Damping", three ? tj.damping : damping);
+        cs.SetFloat("Friction", three && tj.sticky ? -1f : toolFriction);
+        if (three)
+        {
+            float u = Mathf.Clamp01((tj.progress - 0.35f) / 0.65f);
+            cs.SetFloat("Lambda", tj.Lambda);
+            cs.SetFloat("YieldFresh", tj.yieldFresh);
+            cs.SetFloat("YieldKneaded", tj.yieldKneaded);
+            cs.SetFloat("FlowK", Mathf.Max(tj.flowConsistency, 1e-3f));
+            cs.SetFloat("FlowN", Mathf.Clamp(tj.flowExponent, 0.1f, 1f));
+            cs.SetFloat("WorkToDough", Mathf.Max(tj.workToDough, 1e-3f));
+            cs.SetFloat("BaseCohesion", tj.baseCohesion);
+            cs.SetFloat("WorkRateFloor", tj.workRateFloor);
+            cs.SetFloat("CohFloor", u * u * (3f - 2f * u));
+        }
         cs.SetFloat("Band", tackBandCells * dx);
         cs.SetFloat("Cutoff", Mathf.Max(3f * dx, pullReach + dx));
         cs.SetFloat("PullSpeed", pullSpeed);
         cs.SetFloat("PullReach", pullReach);
         cs.SetFloat("PullShape", pullShape);
-        cs.SetFloat("PullGain", pullGain);
+        // three.js: the follow gain is per 3 ms of simulated time, so the tent doesn't depend on the substep
+        cs.SetFloat("PullGain", three ? 1f - Mathf.Pow(1f - Mathf.Clamp01(tj.pullGain), dt / 0.003f) : pullGain);
         cs.SetFloat("GripReach", gripReach);
-        cs.SetFloat("CrowdStiffness", crowdStiffness);
-        cs.SetFloat("StrayDensity", strayDensity);
-        cs.SetFloat("StrayDrag", strayDrag);
+        cs.SetFloat("CrowdStiffness", three ? tj.crowdStiffness : crowdStiffness);
+        cs.SetFloat("StrayDensity", three ? tj.strayDensity : strayDensity);
+        cs.SetFloat("StrayDrag", three ? tj.strayDrag : strayDrag);
+        cs.SetFloat("StrayPull", three ? tj.strayPull : 0f);
         cs.SetFloat("RestNodeMass", pVol * density * particlesPerCell);
-        cs.SetFloat("FloorHold", floorHold);
+        cs.SetFloat("FloorHold", three ? tj.floorHold : floorHold);
         cs.SetInt("FloorCells", floorCells);
         cs.SetFloat("VMax", Mathf.Min(0.8f * dx / dt, maxDoughSpeed));
         cs.SetFloat("PushOut", 1f);
@@ -323,7 +399,7 @@ public class MochiSolver : MonoBehaviour, IMochiSim
         // substep cap makes the dough run slow, a tool still sweeps through it without leaving it behind.
         int primCount = GatherTools(out float maxMove);
         float frame = Mathf.Min(Time.deltaTime, 1f / 30f) * Mathf.Max(timeScale, 0f);
-        float dtMax = cellSize / (waveSpeed / cfl + Mathf.Min(maxMove / Mathf.Max(frame, 1e-4f), maxToolSpeed) / 0.8f);
+        float dtMax = cellSize / (WaveSpeed / cfl + Mathf.Min(maxMove / Mathf.Max(frame, 1e-4f), ToolSpeedCap) / 0.8f);
         int n = Mathf.Clamp(Mathf.CeilToInt(frame / dtMax), 1, Mathf.Max(maxSubsteps, 1));
         float dt = Mathf.Min(frame / n, dtMax);
         if (frame <= 0f) { n = 0; dt = dtMax; }
@@ -383,7 +459,7 @@ public class MochiSolver : MonoBehaviour, IMochiSim
     /// <summary>Turns the gathered displacements into velocities over the simulated time and uploads the primitives.</summary>
     void UploadTools(int np, float simFrame)
     {
-        float maxMove = maxToolSpeed * simFrame;
+        float maxMove = ToolSpeedCap * simFrame;
         for (int i = 0; i < np; i++)
             for (int k = 0; k < 3; k++)
             {
@@ -513,11 +589,12 @@ public class MochiSolver : MonoBehaviour, IMochiSim
         float floor = FloorOffset, rim = FloorOffset + (usu != null ? usu.depth : 0.13f);
         string fists = "";
         foreach (var kv in toolStates) if (kv.Key is MatHand) fists += (kv.Key.handType == MatTool.HandType.LeftHand ? "L" : "R") + (kv.Value.fist ? "fist " : "open ");
+        bool three = ThreeJsModel; float workToDough = three ? Mathf.Max(threeJs.workToDough, 1e-3f) : 1f;
         AsyncGPUReadback.Request(parts, req =>
         {
             if (req.hasError || this == null || count != ParticleCount) return;
             NativeArray<float> d = req.GetData<float>();
-            int fast = 0, air = 0, bonded = 0, bad = 0; float vmax = 0f, top = 0f;
+            int fast = 0, air = 0, bonded = 0, bad = 0; float vmax = 0f, top = 0f; double work = 0;
             for (int i = 0; i < count; i++)
             {
                 int o = i * 28;
@@ -528,8 +605,11 @@ public class MochiSolver : MonoBehaviour, IMochiSim
                 if (y > rim) air++;
                 if (d[o + 3] > 0f) bonded++;
                 vmax = Mathf.Max(vmax, v); top = Mathf.Max(top, y - floor);
+                work += d[o + 23];
             }
-            Debug.Log($"MochiStats fps={fps:F0} sub={sub} prims={primCount} toolSpeed={toolSpeed:F2} {fists}vmax={vmax:F2} fast={fast} aboveRim={air} bonded={bonded} top={top * 100f:F0}cm nan={bad} links={tetherInfo}");
+            // three.js material: mean plastic work per particle over the work that makes it fully kneaded
+            string kneaded = three ? $" kneaded={work / Mathf.Max(count - bad, 1) / workToDough:F2}" : "";
+            Debug.Log($"MochiStats fps={fps:F0} sub={sub} prims={primCount} toolSpeed={toolSpeed:F2} {fists}vmax={vmax:F2} fast={fast} aboveRim={air} bonded={bonded} top={top * 100f:F0}cm nan={bad} links={tetherInfo}{kneaded}");
         });
     }
 

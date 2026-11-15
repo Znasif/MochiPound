@@ -65,6 +65,17 @@ MLS-MPM in SI units, in the solver transform's local space (metres). Two dispatc
 
 Once per frame: `ToolSdf` (signed distance, normal, velocity and tack of the nearest tool at every node; the usu wall is analytic) and `Density` (node mass resampled to the render grid for marching cubes).
 
+**Material: two models** (`MochiSolver.model`, 2026-11-15). The default, `ThreeJs`, is the material of the three.js scene (`mochi-pounding/src/dough/mpm-core.js`, a VR-Doh port), because the user found the Unity dough looked nothing like it. Its values are in `MochiSolver.threeJs`, copied from mpm-core.js `DEFAULTS`:
+- Compressible Neo-Hookean, `tau = mu (b - I) + lambda log(J) I`, E 4 kPa and nu 0.4 (shear modulus 1.4 kPa).
+- Herschel-Bulkley viscoplasticity on the Hencky strain (a Jacobi eigen-decomposition of b, only for particles near the yield surface). Below the yield stress the dough is an elastic solid. Above it, it flows at `((excess) / 300 Pa s^n)^(1 / 0.3)`, so its own weight only lets it creep, a strike flows at once, and dents stay.
+- The yield stress goes from 800 Pa (just-steamed) to 550 Pa (kneaded), per particle. Each particle's fast plastic shear is kept in `P.bd.w` as kneading work (`workToDough` 4). Kneaded dough is also tackier: a tool's tack is scaled by 0.4 + 0.6 x cohesion.
+- No `centering`, damping 6/s, sticky contact, `crowdStiffness` 2 kPa, no floor bond, tool speed cap 5 m/s.
+  - Sticky contact (`Friction` < 0 in the shader) means dough pressed against a tool, a hand or the wood moves with it, and is released when the tool moves away.
+- Stray specks (density under 0.35) are braked at 30/s and drawn back to the lump at 6 m/s^2.
+- The tack follow gain is per 3 ms of simulated time.
+
+`Bingham` is the earlier Unity tune, from the material fields under "Dough": `yieldStress` 80 Pa, `relaxTime` 0.05 s and `centering` 80, a soft dough that flows back into a dome. Both models share the grid, the mass, the tack (`kineTack`, `pullReach`), the links and the rendering. The usu here is the tabletop one, with a 1.9 L lump about 8 cm tall. The three.js mortar is full-size, with 11 L. So the same material sits about as close to its yield under its own weight (900 Pa here, about 1,600 Pa there), but it is somewhat firmer relative to its size.
+
 Deliberately non-physical parts, which carry the illusion:
 
 - **Tack.** Dough pressed by a tool with tack > 0 becomes bonded, and the bond spreads through touching dough up to `pullReach`. While the tool pulls away, bonded dough is given `tool velocity x falloff(distance)`, which stretches the lump into a tent rather than tearing a skin off. Bonds age only while the tool pulls, so they all release together after the tool's tack time. Relying on real adhesion stress here was tried and fails: the bonded skin tears off as crumbs.
@@ -83,7 +94,17 @@ Tool velocities are displacement divided by *simulated* frame time, so when the 
 
 ## Target behaviour
 
-Targets, with current native-solver status as of 2026-11-14:
+Targets, with current native-solver status as of 2026-11-14. **The tent, rounding and dent rows were measured with the `Bingham` material.** The default became `ThreeJs` on 2026-11-15. Its plasticity, kneading work and stress match mpm-core.js in an off-Editor test of a JS copy of the shader code (`.tmp/dough-model-test` on the cluster):
+- 4,000 random deformations, 2,619 of them past the yield: worst relative error 2e-6 in float32;
+- simple shear at 0.05, 2 and 40/s: the same stress to 0.1 Pa (143, 697 and 849 Pa).
+
+It has not been compiled or run in Unity. What the three.js scene shows for it:
+- dry strikes tent the dough only 2-3 cm above its resting top;
+- the first strike leaves a 5-7 cm dent that stays;
+- the mound does not slump;
+- dough pressed under a palm moves with it.
+
+The "dents round off" target is the Bingham tune's. The three.js scene keeps dents, and so does `ThreeJs`; switch `model` to compare.
 
 | Target | Status |
 |---|---|
