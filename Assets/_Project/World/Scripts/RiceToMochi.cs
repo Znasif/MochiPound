@@ -136,7 +136,22 @@ namespace MoonRabbit.World
             Draw();
         }
 
-        void Draw()
+#if UNITY_EDITOR
+        // Editor only: grains are drawn from Update, which stops while the Editor is paused, so every Scene/Game view
+        // repaint would lose them. While paused they are drawn for each camera that renders, from the current state,
+        // so hideDetachedRice can be compared frame by frame.
+        void OnEnable() => Camera.onPreCull += DrawWhilePaused;
+        void OnDisable() => Camera.onPreCull -= DrawWhilePaused;
+
+        void DrawWhilePaused(Camera cam)
+        {
+            if (!UnityEditor.EditorApplication.isPaused || !assigned || link == null || !link.HasDough || grainMaterial == null) return;
+            if (link.DoughRenderer != null && !link.DoughRenderer.enabled) return;
+            Draw(cam);
+        }
+#endif
+
+        void Draw(Camera onlyCamera = null)
         {
             float p = shownProgress;
             float g = Mathf.Pow(p, 0.85f);                    // global melt
@@ -185,6 +200,7 @@ namespace MoonRabbit.World
             var rp = new RenderParams(grainMaterial)
             {
                 layer = gameObject.layer,
+                camera = onlyCamera,
                 worldBounds = new Bounds(link.Centroid, Vector3.one * 0.8f),
                 shadowCastingMode = ShadowCastingMode.Off,
                 receiveShadows = false,
