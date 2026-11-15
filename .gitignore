@@ -3,3 +3,7 @@ dist/
 .tmp/
 .satie/
 .env*
+
+# songs stay local (copyright): only README.txt is tracked
+public/music/*
+!public/music/README.txt
